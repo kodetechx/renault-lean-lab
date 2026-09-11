@@ -1,7 +1,7 @@
 # Fase 1 — Implementação do MVP
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** Em andamento
+**Status:** ✅ Núcleo de IA testado e funcionando (organização de dataset, treino e inferência ao vivo)
 **Depende de:** `fase-0-validacao-e-escopo.md` (concluída) e `projeto-renault-lean-lab-pesquisa.md`
 
 ---
@@ -52,13 +52,25 @@ Nesta etapa o foco é **fazer o núcleo de IA + captura funcionar localmente** (
 
 Pasta `fase1-mvp/`:
 
-| Arquivo | Função |
-|---|---|
-| `organize_dataset.py` | Organiza as imagens brutas (pastas por classe) em `train/val/test` |
-| `train_classifier.py` | Treina o classificador de camada e avalia no conjunto de teste |
-| `infer_webcam.py` | Roda o modelo ao vivo pela webcam, com alerta e log de eventos |
-| `requirements.txt` | Dependências Python necessárias |
-| `README.md` | Passo a passo de como rodar tudo |
+| Arquivo | Função | Status |
+|---|---|---|
+| `organize_dataset.py` | Organiza as imagens brutas (pastas por classe) em `train/val/test` | ✅ Testado |
+| `rename_images.py` | Utilitário para padronizar nomes de arquivo por classe | ✅ Testado |
+| `train_classifier.py` | Treina o classificador de camada e avalia no conjunto de teste | ✅ Testado |
+| `infer_webcam.py` | Roda o modelo ao vivo pela webcam, com alerta e log de eventos | ✅ Testado |
+| `requirements.txt` | Dependências Python necessárias | ✅ |
+| `README.md` | Passo a passo de como rodar tudo | ✅ |
+
+## 4.1 O que já pode ser entregue como resultado da Fase 1
+
+Esta etapa já constitui uma **entrega parcial válida** do protótipo, cobrindo o núcleo de IA Aplicada do desafio:
+
+- Pipeline funcional: captura (webcam) → classificação (modelo treinado) → decisão automática (alerta) → registro do evento (CSV).
+- Evidência de que a "automação de processos" e a "IA para análise de dados" (requisitos do documento oficial) já funcionam de ponta a ponta, mesmo que hoje de forma local/single-estação.
+
+**Para fechar essa entrega com mais robustez, vale complementar com:**
+- As métricas de avaliação do `train_classifier.py` (acurácia, precisão/recall por classe e a matriz de confusão) — se já foram geradas no teste, registrar aqui como evidência de qualidade do modelo.
+- Um vídeo curto ou prints da tela do `infer_webcam.py` mostrando o alerta disparando (bom para a apresentação/relatório acadêmico).
 
 ---
 
