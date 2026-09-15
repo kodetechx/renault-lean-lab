@@ -1,7 +1,7 @@
 # Fase 1 — Implementação do MVP
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** ✅ Fase 1 completa — pipeline ponta-a-ponta funcionando (câmera → IA → alerta → API → banco → dashboard)
+**Status:** ✅ Fase 1 concluída e testada de ponta a ponta (câmera → IA → alerta → API → banco → dashboard, rodando em conjunto e validado pelo grupo)
 **Depende de:** `fase-0-validacao-e-escopo.md` (concluída) e `projeto-renault-lean-lab-pesquisa.md`
 
 ---
@@ -107,3 +107,35 @@ Matriz de confusão perfeitamente diagonal (nenhum erro entre classes).
 3. Testar `infer_webcam.py` ao vivo (pode ser com fotos impressas ou a própria peça em mãos, sem precisar estar na sala do laboratório).
 4. Validar com o grupo se o comportamento do alerta e da contagem faz sentido na prática.
 5. Iniciar a Fase 1.2 (backend + banco + dashboard).
+
+---
+
+## 7. Checklist do que entregar como resultado da Fase 1
+
+Tudo abaixo já existe e está funcionando — isto é só a lista do que reunir para a entrega/apresentação.
+
+### 7.1 Código-fonte
+- [x] Pasta `fase1-mvp/` completa: `organize_dataset.py`, `rename_images.py`, `train_classifier.py`, `infer_webcam.py`, `backend/`, `dashboard/`, `requirements.txt` de cada parte.
+- [x] `modelo_camada.keras` + `class_names.json` (modelo já treinado, não precisa treinar de novo na hora da apresentação).
+
+### 7.2 Evidência de qualidade do modelo
+- [x] Relatório de métricas do conjunto de teste (seção 4.2 deste documento — 100% de acurácia, com a ressalva sobre generalização já registrada).
+- [ ] **Pendente, se der tempo:** um teste rápido do `infer_webcam.py` em condições diferentes da sessão de captura original (outro fundo/ângulo/luz), para reforçar a validação do modelo antes da entrega — não bloqueia a entrega, mas fortalece a apresentação.
+
+### 7.3 Demonstração ao vivo ou gravada
+- [ ] Vídeo curto (ou demo ao vivo) mostrando: webcam detectando a peça → evento aparecendo no dashboard → alerta disparando quando a camada está incorreta. Isso é a prova mais direta de que o "protótipo funcional" pedido no documento oficial existe de verdade.
+- [ ] Print(s) do dashboard com dados reais (peças por estação, taxa de alerta, tempo de ciclo).
+
+### 7.4 Documentação
+- [x] `projeto-renault-lean-lab-pesquisa.md` — viabilidade técnica e visão geral da arquitetura.
+- [x] `fase-0-validacao-e-escopo.md` — validação com o laboratório e decisões de escopo/hardware/rede.
+- [x] `fase-1-plano.md` (este documento) — decisões técnicas, arquivos entregues, métricas.
+
+### 7.5 Ligação explícita com as 3 matérias (útil para a banca/professor)
+- **IA Aplicada:** modelo de classificação treinado via transfer learning (MobileNetV2), métricas de avaliação, lógica de decisão do alerta.
+- **Arquitetura de Software:** separação em módulos com responsabilidade única (captura/IA, API, banco, dashboard), API REST documentada, fallback de resiliência no `infer_webcam.py`.
+- **Arquitetura de Sistemas IoT:** webcam como sensor da estação, rede via hotspot, tolerância a falha de conectividade (backup local quando a API está inacessível).
+
+### 7.6 O que deixar claro que é próximo passo (não é dívida técnica, é escopo planejado)
+- MQTT entre múltiplas estações — só faz sentido replicando para mais de uma estação (Fase 2).
+- Verificação fina de parafusos/encaixes, detecção de avaria, QR/RFID — Fase 2, propositalmente fora do MVP.
