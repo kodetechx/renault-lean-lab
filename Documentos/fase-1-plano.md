@@ -1,7 +1,7 @@
 # Fase 1 — Implementação do MVP
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** ✅ Núcleo de IA testado e funcionando (organização de dataset, treino e inferência ao vivo)
+**Status:** ✅ Fase 1 completa — pipeline ponta-a-ponta funcionando (câmera → IA → alerta → API → banco → dashboard)
 **Depende de:** `fase-0-validacao-e-escopo.md` (concluída) e `projeto-renault-lean-lab-pesquisa.md`
 
 ---
@@ -26,11 +26,12 @@ Nesta etapa o foco é **fazer o núcleo de IA + captura funcionar localmente** (
    - alerta automático quando a camada detectada ≠ camada esperada da estação (atende ao requisito "automação de processos" do documento oficial);
    - contagem de peças e tempo de ciclo, registrados em CSV local.
 
-### 🔜 Fica para a Fase 1.2 (próxima etapa)
-- Backend/API para receber os eventos (hoje ficam em CSV local).
-- Banco de dados (Postgres) substituindo o CSV.
-- Dashboard web consumindo a API.
-- Comunicação via MQTT entre múltiplas estações (hoje é single-estação, single-máquina).
+### 🔜 Fica para a Fase 1.2 (próxima etapa) — ✅ ENTREGUE
+
+- ~~Backend/API para receber os eventos (hoje ficam em CSV local).~~ → **Feito:** API FastAPI (`backend/main.py`).
+- ~~Banco de dados (Postgres) substituindo o CSV.~~ → **Feito com SQLite** (via SQLAlchemy — trocar para Postgres depois é só mudar `DATABASE_URL`, sem tocar no resto do código).
+- ~~Dashboard web consumindo a API.~~ → **Feito:** dashboard Streamlit (`dashboard/app.py`).
+- Comunicação via MQTT entre múltiplas estações — continua pendente, só faz sentido quando o grupo replicar para mais de uma estação (ver Fase 2).
 
 ---
 
@@ -57,9 +58,11 @@ Pasta `fase1-mvp/`:
 | `organize_dataset.py` | Organiza as imagens brutas (pastas por classe) em `train/val/test` | ✅ Testado |
 | `rename_images.py` | Utilitário para padronizar nomes de arquivo por classe | ✅ Testado |
 | `train_classifier.py` | Treina o classificador de camada e avalia no conjunto de teste | ✅ Testado |
-| `infer_webcam.py` | Roda o modelo ao vivo pela webcam, com alerta e log de eventos | ✅ Testado |
-| `requirements.txt` | Dependências Python necessárias | ✅ |
+| `infer_webcam.py` | Roda o modelo ao vivo pela webcam, com alerta e envio de eventos para a API | ✅ Testado |
+| `requirements.txt` | Dependências Python necessárias (scripts principais) | ✅ |
 | `README.md` | Passo a passo de como rodar tudo | ✅ |
+| `backend/main.py`, `database.py`, `models.py`, `schemas.py` | API FastAPI + SQLite: recebe eventos e expõe estatísticas | ✅ Entregue |
+| `dashboard/app.py` | Dashboard Streamlit consumindo a API (peças por estação, taxa de alerta, tempo de ciclo) | ✅ Entregue |
 
 ## 4.1 O que já pode ser entregue como resultado da Fase 1
 
