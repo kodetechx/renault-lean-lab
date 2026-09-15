@@ -72,6 +72,21 @@ Esta etapa já constitui uma **entrega parcial válida** do protótipo, cobrindo
 - As métricas de avaliação do `train_classifier.py` (acurácia, precisão/recall por classe e a matriz de confusão) — se já foram geradas no teste, registrar aqui como evidência de qualidade do modelo.
 - Um vídeo curto ou prints da tela do `infer_webcam.py` mostrando o alerta disparando (bom para a apresentação/relatório acadêmico).
 
+### 4.2 Métricas obtidas no conjunto de teste (registrado em set/2026)
+
+| Classe | Precisão | Recall | F1-score | Amostras (teste) |
+|---|---|---|---|---|
+| base | 1.00 | 1.00 | 1.00 | 36 |
+| camada_verde | 1.00 | 1.00 | 1.00 | 36 |
+| camada_amarela | 1.00 | 1.00 | 1.00 | 36 |
+| camada_azul | 1.00 | 1.00 | 1.00 | 36 |
+| camada_vermelha | 1.00 | 1.00 | 1.00 | 36 |
+| **Acurácia geral** | | | **1.00** | 180 |
+
+Matriz de confusão perfeitamente diagonal (nenhum erro entre classes).
+
+⚠️ **Observação de cautela:** 100% de acurácia é esperado dado que as classes são cores bem distintas, mas como o split treino/val/teste veio de uma única sessão de captura, teste e treino provavelmente compartilham fundo/iluminação/ângulo — o que pode inflar o resultado. **Antes de considerar o modelo validado, testar `infer_webcam.py` em condições um pouco diferentes** (outro ângulo, luz ou fundo) para confirmar que a generalização é real e não só "decoreba" do cenário da sessão de captura. Se a acurácia cair nesse teste, é sinal de que vale coletar mais variação de fundo/ângulo na próxima sessão presencial.
+
 ---
 
 ## 5. Como isso conecta com as 3 matérias
