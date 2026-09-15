@@ -139,3 +139,18 @@ Tudo abaixo já existe e está funcionando — isto é só a lista do que reunir
 ### 7.6 O que deixar claro que é próximo passo (não é dívida técnica, é escopo planejado)
 - MQTT entre múltiplas estações — só faz sentido replicando para mais de uma estação (Fase 2).
 - Verificação fina de parafusos/encaixes, detecção de avaria, QR/RFID — Fase 2, propositalmente fora do MVP.
+
+---
+
+## 8. Melhorias identificadas durante os testes (registrado em set/2026)
+
+Durante o uso real do `infer_webcam.py`, o grupo identificou que uma peça parada continuamente em frente à câmera é contada várias vezes — o sistema hoje não distingue "peça nova chegou" de "a mesma peça continua ali", só respeita o cooldown de 3s entre contagens.
+
+| Melhoria | Descrição | Fase | Exige hardware novo? |
+|---|---|---|---|
+| Classe "vazio/sem peça" no modelo | Adicionar uma classe extra representando a bancada vazia; só conta uma peça nova depois de detectar "vazio" entre uma peça e outra — cria um ciclo real de entrada/saída | **Fase 1 (refinamento)** | Não |
+| Fine-tuning das últimas camadas do modelo | Descongelar parte da base do MobileNetV2 após o treino inicial, com taxa de aprendizado menor, para melhorar generalização | **Fase 1 (refinamento)** | Não |
+| Testar em condições variadas de luz/ângulo/fundo | Validar se a acurácia de 100% se mantém fora das condições da sessão de captura original | **Fase 1 (refinamento)** | Não |
+| Recorte de região de interesse (ROI) fixa | Classificar só a região da bancada, reduzindo ruído de fundo/mãos/mesa | **Fase 1 (refinamento)** | Não |
+| Sensor de presença físico (IR ou chave fim-de-curso) | Detecta fisicamente a chegada/saída da peça, disparando a classificação só no momento certo — mais confiável que depender só da visão computacional para presença | **Fase 2** | Sim (baixo custo) |
+| Migração de classificação para detecção de objeto (YOLO) | Localizar a peça na cena antes de classificar — mais robusto a variação de posição/câmera, e reaproveita o mesmo caminho técnico da verificação fina de parafusos/encaixes já planejada para a Fase 2 | **Fase 2** | Não (mas é retrabalho técnico maior) |
