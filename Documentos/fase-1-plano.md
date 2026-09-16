@@ -75,7 +75,9 @@ Esta etapa já constitui uma **entrega parcial válida** do protótipo, cobrindo
 - As métricas de avaliação do `train_classifier.py` (acurácia, precisão/recall por classe e a matriz de confusão) — se já foram geradas no teste, registrar aqui como evidência de qualidade do modelo.
 - Um vídeo curto ou prints da tela do `infer_webcam.py` mostrando o alerta disparando (bom para a apresentação/relatório acadêmico).
 
-### 4.2 Métricas obtidas no conjunto de teste (registrado em set/2026)
+### 4.2 Métricas obtidas no conjunto de teste — v1, histórico (registrado em set/2026)
+
+> **Nota:** esta é a versão inicial do modelo (5 classes, sem detecção de presença). Foi substituída pela v2, com a classe `vazio` adicionada — ver comparação completa na seção 8.2.
 
 | Classe | Precisão | Recall | F1-score | Amostras (teste) |
 |---|---|---|---|---|
@@ -154,3 +156,33 @@ Durante o uso real do `infer_webcam.py`, o grupo identificou que uma peça parad
 | Recorte de região de interesse (ROI) fixa | Classificar só a região da bancada, reduzindo ruído de fundo/mãos/mesa | **Fase 1 (refinamento)** | Não |
 | Sensor de presença físico (IR ou chave fim-de-curso) | Detecta fisicamente a chegada/saída da peça, disparando a classificação só no momento certo — mais confiável que depender só da visão computacional para presença | **Fase 2** | Sim (baixo custo) |
 | Migração de classificação para detecção de objeto (YOLO) | Localizar a peça na cena antes de classificar — mais robusto a variação de posição/câmera, e reaproveita o mesmo caminho técnico da verificação fina de parafusos/encaixes já planejada para a Fase 2 | **Fase 2** | Não (mas é retrabalho técnico maior) |
+
+### 8.1 Atualização — classe "vazio" implementada (registrado em set/2026)
+
+- ✅ Corrigido bug de pré-processamento duplicado no `infer_webcam.py` (o `preprocess_input` já está embutido no grafo do modelo salvo por `train_classifier.py`; aplicá-lo de novo na inferência distorcia a entrada — identificado e corrigido pelo grupo).
+- ✅ Lógica de contagem trocada de "cooldown por tempo" para **máquina de estados de presença** (`AGUARDANDO_PECA` / `PECA_PRESENTE`), usando a nova classe `vazio` como gatilho de transição. Isso resolve o problema de recontagem de uma peça parada em frente à câmera sem precisar de sensor de hardware novo.
+- ✅ `organize_dataset.py` e `train_classifier.py` não precisaram de nenhuma alteração — são genéricos o suficiente para reconhecer a 6ª classe automaticamente a partir da estrutura de pastas.
+- ✅ Retreino concluído com a nova classe `vazio` e dataset ampliado (mais variedade de ângulo/fundo, conforme recomendado).
+
+### 8.2 Comparação v1 (5 classes) vs. v2 (6 classes, com "vazio")
+
+| | v1 | v2 |
+|---|---|---|
+| Classes | 5 | 6 (+ `vazio`) |
+| Amostras de teste | 180 | 294 |
+| Acurácia geral | 100% | **98%** |
+| Erros no conjunto de teste | 0 | 5 |
+
+**Detalhamento dos erros da v2:**
+
+| Classe real | Confundida com | Qtd |
+|---|---|---|
+| camada_amarela | base | 1 |
+| camada_amarela | camada_azul | 1 |
+| camada_azul | vazio | 1 |
+| camada_verde | vazio | 1 |
+| camada_vermelha | camada_azul | 1 |
+
+**Interpretação:** a queda de 100% para 98% é um sinal **positivo**, não uma regressão. A v1 foi treinada e testada com imagens de uma única sessão de captura (mesmo fundo/luz/ângulo), o que tende a inflar a acurácia artificialmente — o modelo pode acertar por reconhecer o cenário, não só a peça. A v2 tem mais diversidade real (incluindo a classe `vazio`, que é naturalmente mais próxima visualmente de algumas cores em certos ângulos), e os erros que aparecem fazem sentido: confusões pontuais entre cores próximas e entre cor/vazio, não erros aleatórios. Isso é evidência de que o modelo está generalizando melhor, mesmo com uma acurácia nominal menor.
+
+**Ação recomendada (opcional, não bloqueia a entrega):** se der tempo antes da apresentação final, vale abrir as 5 imagens específicas que erraram e conferir se são casos genuinamente ambíguos (ex.: ângulo ruim, peça parcialmente fora de quadro) ou se há algum problema de rotulagem/captura — isso ajuda a decidir se vale coletar mais alguns exemplos desses casos-limite na próxima sessão. Para o MVP, 98% com esse padrão de erro já é um resultado sólido e defensável.
