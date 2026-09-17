@@ -186,3 +186,32 @@ Durante o uso real do `infer_webcam.py`, o grupo identificou que uma peça parad
 **Interpretação:** a queda de 100% para 98% é um sinal **positivo**, não uma regressão. A v1 foi treinada e testada com imagens de uma única sessão de captura (mesmo fundo/luz/ângulo), o que tende a inflar a acurácia artificialmente — o modelo pode acertar por reconhecer o cenário, não só a peça. A v2 tem mais diversidade real (incluindo a classe `vazio`, que é naturalmente mais próxima visualmente de algumas cores em certos ângulos), e os erros que aparecem fazem sentido: confusões pontuais entre cores próximas e entre cor/vazio, não erros aleatórios. Isso é evidência de que o modelo está generalizando melhor, mesmo com uma acurácia nominal menor.
 
 **Ação recomendada (opcional, não bloqueia a entrega):** se der tempo antes da apresentação final, vale abrir as 5 imagens específicas que erraram e conferir se são casos genuinamente ambíguos (ex.: ângulo ruim, peça parcialmente fora de quadro) ou se há algum problema de rotulagem/captura — isso ajuda a decidir se vale coletar mais alguns exemplos desses casos-limite na próxima sessão. Para o MVP, 98% com esse padrão de erro já é um resultado sólido e defensável.
+
+---
+
+## 9. MobileNetV2 (classificação) vs. YOLO (detecção de objeto) — decisão técnica (registrado em set/2026)
+
+Dúvida levantada pelo grupo: já que o MVP usa MobileNetV2, valeria migrar para YOLO para uma detecção mais apurada?
+
+### 9.1 Diferença fundamental
+
+| | MobileNetV2 (usado hoje) | YOLO |
+|---|---|---|
+| Tarefa | **Classificação** — um rótulo para o frame inteiro | **Detecção de objetos** — localiza (bounding box) e classifica múltiplos objetos na mesma cena |
+| Múltiplos objetos por frame | Não — assume um "assunto" dominante no quadro | Sim — é a força principal do YOLO |
+| Sensibilidade a fundo/posição da peça no quadro | Alta — o modelo julga a imagem inteira | Baixa — localiza o objeto de interesse primeiro |
+| Contar componentes pequenos (parafusos, encaixes) | Não é possível com classificação pura | Sim — é exatamente o caso de uso do YOLO |
+| Resolve nativamente "peça parada sendo recontada"? | Não — por isso foi necessário criar a classe `vazio` + máquina de estados (seção 8.1) como solução de contorno | Resolve de forma mais direta — presença de uma caixa detectada já indica presença de peça, sem precisar de uma classe artificial para "nada" |
+
+### 9.2 Decisão: manter MobileNetV2 na Fase 1, migrar para YOLO na Fase 2
+
+- **Não compensa migrar agora.** A tarefa atual (classificar a cor da camada por estação) já é resolvida bem por classificação simples: 98% de acurácia real (v2, seção 8.2), leve o suficiente para rodar no notebook, e o problema de recontagem já foi resolvido pela classe `vazio` sem precisar de detecção de objeto. Migrar aqui seria refazer algo que já funciona.
+- **Compensa, e é praticamente necessário, para o escopo da Fase 2** (verificação fina de parafusos/encaixes, detecção de avaria) — essas tarefas exigem localizar múltiplos componentes pequenos dentro da peça, o que classificação de imagem inteira não resolve. Isso já estava previsto como decisão futura (ver linha "Migração de classificação para detecção de objeto (YOLO)" na tabela da seção 8).
+- **Recomendação prática:** introduzir o YOLO junto com o início da Fase 2, quando o objetivo passar de "qual cor é essa peça" para "essa peça tem os componentes certos, nos lugares certos".
+
+### 9.3 O que vai ser necessário para migrar, quando chegar a hora
+
+1. **Reanotação do dataset (maior esforço).** O formato atual (uma pasta por classe) não serve para detecção — cada imagem precisa de anotação de bounding box (retângulo + classe) ao redor de cada componente de interesse. Requer ferramenta de anotação (Roboflow ou CVAT, já indicadas no documento de pesquisa original). As fotos já capturadas podem ser reaproveitadas, mas precisam ser reanotadas nesse novo formato.
+2. **Treino — fica mais simples de codar.** A biblioteca `ultralytics` (pacote Python do YOLO) tem API de alto nível; o treino em si é próximo de um único comando (`yolo train data=... model=yolo11n.pt epochs=...`), exigindo menos código customizado que o `train_classifier.py` atual.
+3. **Reescrita da lógica de decisão em `infer_webcam.py`.** Em vez de um rótulo único por frame, o script passa a receber uma lista de detecções (caixa + classe + confiança por objeto). A lógica de contagem/alerta precisa ser adaptada a essa estrutura — a máquina de estados de presença já implementada tende a ficar até mais simples, já que "existe uma detecção de peça na cena" substitui a necessidade da classe `vazio`.
+4. **Backend e dashboard não precisam mudar.** A API já recebe eventos genéricos (`estacao`, `classe_detectada`, `status`, `tempo_ciclo_s`); a troca de modelo só afeta o que preenche esses campos, não a API/banco/dashboard em si — evidência de que a separação em camadas da Fase 1.2 já isola bem essa migração futura.
