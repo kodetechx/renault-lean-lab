@@ -1,7 +1,7 @@
 Programa/fase1-mvp/venv/
 Programa/fase1-mvp/dataset/
-Programa/fase1-mvp/raw_images/
-Imagens/
+# Programa/fase1-mvp/raw_images/
+# Imagens/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
