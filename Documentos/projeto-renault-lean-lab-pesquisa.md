@@ -35,6 +35,7 @@ A ideia central é usar **uma câmera por estação** (ou uma câmera compartilh
 - Para cada classe "obrigatória" (ex.: parafuso), o sistema conta quantas instâncias foram detectadas na peça finalizada e compara com o número esperado (regra de negócio simples, não precisa de IA para essa parte — é lógica determinística em cima da saída do modelo).
 - Encaixes podem ser validados por **posição relativa** (o modelo detecta a peça B dentro da bounding box esperada da peça A) ou por um segundo modelo de classificação "montagem OK / montagem NG" treinado com fotos de montagens corretas e incorretas.
 - **Nível de dificuldade:** médio. Depende principalmente da qualidade e volume do dataset de treino (fotos da peça em várias etapas de montagem, ângulos e condições de luz).
+- **Situação real do projeto (20/09/2026):** esta é exatamente a frente implementada na Fase 2 — ver `fase-2-plano.md`. A versão final ficou mais simples do que esta pesquisa original previa: em vez de detectar cada componente da camada (peças A/B/C/D), o grupo decidiu detectar a peça montada inteira por cor (poka-yoke mecânico já garante montagem correta dos componentes internos) mais a contagem de parafusos e das 4 peças de encaixe específicas das camadas amarela/vermelha.
 
 ### 3.2 Contar peças montadas por estação
 **Viável e é o caso de uso mais simples.**
@@ -55,6 +56,9 @@ A ideia central é usar **uma câmera por estação** (ou uma câmera compartilh
 - Pode ser enriquecido futuramente com detecção de "parada"/"peça parada sem atividade" para métricas de eficiência (ex.: um proto-OEE).
 
 ### 3.5 Detecção de anomalias na peça (avarias, quebras, etc.)
+
+> **Atualização 20/09/2026: este item foi removido do escopo do projeto.** O laboratório de treinamento não disponibiliza peças com defeito real para treinar esse tipo de modelo (a abordagem supervisionada abaixo exige exemplos reais de defeito, que não existem no ambiente de treinamento; a abordagem não supervisionada mitigaria isso, mas o grupo optou por não seguir essa frente). Decisão registrada em `fase-2-plano.md`, seção 7. O conteúdo abaixo é mantido apenas como registro da pesquisa técnica original.
+
 **Viável, com duas abordagens possíveis (do mais simples ao mais robusto):**
 
 1. **Classificação binária "OK / defeito"** com um modelo treinado em cima de fotos de peças boas e peças com defeito (abordagem supervisionada clássica, exige dataset com exemplos de defeito).
@@ -63,7 +67,7 @@ A ideia central é usar **uma câmera por estação** (ou uma câmera compartilh
 - **Nível de dificuldade:** o mais alto dos cinco pontos. Recomenda-se deixar como "fase 2" do projeto, começando pelo item 3.1/3.2/3.4 no MVP.
 
 ### Conclusão da seção 3
-Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e open-source. O fator limitante não é a tecnologia, e sim **volume e qualidade do dataset de imagens** que conseguirmos capturar das peças da Renault (por isso vale já perguntar ao laboratório se podemos fotografar/filmar as peças em diferentes estágios).
+Dos 5 pontos levantados nesta pesquisa, 4 são tecnicamente viáveis e seguem no projeto (3.1, 3.2, 3.3, 3.4); o item 3.5 (detecção de anomalias) foi removido do escopo por falta de dataset de defeitos reais (ver nota acima). O fator limitante segue sendo **volume e qualidade do dataset de imagens** que conseguimos capturar das peças da Renault.
 
 ---
 
@@ -74,8 +78,8 @@ Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e ope
 | Detecção de objetos (peças, parafusos, encaixes) | **YOLO (Ultralytics)** — hoje a geração mais recente é a **YOLO26** (lançada em jan/2026), otimizada para inferência em CPU/edge e sem NMS; **YOLOv11** também é uma opção madura e muito documentada | Framework open-source, treina com poucas centenas de imagens por classe, roda em tempo real até em Raspberry Pi |
 | Contagem por linha/zona | Lógica de *tracking* simples (ex.: **ByteTrack**, incluído no Ultralytics) sobre a saída do YOLO | Evita contar a mesma peça duas vezes |
 | Classificação OK/NG | Modelo de classificação leve (ex.: **MobileNetV3**, ou até um classificador simples via *transfer learning*) | Rápido de treinar, roda em hardware barato |
-| Detecção de anomalia sem muitos exemplos de defeito | Bibliotecas de *anomaly detection* visual, como **Anomalib** (Intel/OpenVINO) | Pensada exatamente para "poucos exemplos de defeito, muitos exemplos normais" |
-| Treino/anotação de dataset | **Roboflow** (gratuito para uso educacional/pequena escala) ou **CVAT** (open-source, self-hosted) | Facilita anotar as fotos das peças e já exporta no formato certo para treinar YOLO |
+| ~~Detecção de anomalia sem muitos exemplos de defeito~~ | ~~Bibliotecas de *anomaly detection* visual, como **Anomalib** (Intel/OpenVINO)~~ | Item de pesquisa não utilizado — ver nota na seção 3.5 (removido do escopo) |
+| Treino/anotação de dataset | ~~**Roboflow**~~ (descartado — plano gratuito não permite projetos privados, ver `fase-0-validacao-e-escopo.md`, seção 4.3) ou **CVAT** (open-source, self-hosted) — **ferramenta escolhida**, por exigência de confidencialidade | Facilita anotar as fotos das peças e já exporta no formato certo para treinar YOLO |
 
 > **Observação importante sobre licença:** as versões mais recentes do YOLO (YOLOv12/YOLO26 via Ultralytics) usam licença **AGPL-3.0**, que é gratuita para uso acadêmico/protótipo, mas exige atenção se depois quisermos algo "fechado" comercialmente. Para um projeto de faculdade isso não é um problema.
 
@@ -99,6 +103,8 @@ Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e ope
 
 **Recomendação para o MVP (restrição de baixo custo):** começar com **1-2 estações piloto** usando **webcam comum + notebook/Raspberry Pi 5**, provar o conceito de detecção/contagem/dashboard, e só depois avaliar replicar para as 10 estações com Raspberry Pi 5 (que é hoje a opção mais equilibrada entre custo e capacidade de rodar IA localmente).
 
+**Situação real do projeto (20/09/2026):** o MVP (Fases 1 e 2) segue rodando com **webcam + notebook**, sem necessidade de Raspberry Pi ou Jetson até o momento — ver `fase-0-validacao-e-escopo.md`, seção 5.
+
 ### 5.3 Identificação de peças/estações
 
 | Tecnologia | Custo | Prós | Contras |
@@ -107,7 +113,7 @@ Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e ope
 | **RFID (módulo RC522 ou similar)** | Baixo (~US$ 3-5 por leitor + tags) | Não depende de estar visível/limpo, leitura mais robusta em ambiente industrial | Precisa de hardware extra (leitor + antena) por estação, mais um pouco de eletrônica/fiação |
 | **Sensor infravermelho / chave fim-de-curso** | Muito baixo | Ótimo para confirmar "peça entrou/saiu" sem processamento de imagem | Não identifica *qual* peça, só detecta presença |
 
-**Recomendação:** usar **QR Code** no MVP (zero custo extra, aproveita a câmera já instalada) e deixar **RFID como evolução futura** para ambientes onde o código pode ficar sujo/oculto — atende à restrição de "priorizar soluções de baixo custo".
+**Recomendação:** usar **QR Code** no MVP (zero custo extra, aproveita a câmera já instalada) e deixar **RFID como evolução futura** para ambientes onde o código pode ficar sujo/oculto — atende à restrição de "priorizar soluções de baixo custo". **Situação real do projeto (20/09/2026):** essa frente ainda não foi implementada; permanece como evolução futura da Fase 2 — explicação conceitual mais detalhada de como funcionaria registrada em `fase-2-plano.md`, seção 7.1.
 
 ---
 
@@ -151,6 +157,8 @@ Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e ope
 - **IA Aplicada**: cobre o modelo de visão computacional em si (treinamento, inferência, anomaly detection) e pode também aparecer no backend, aplicando IA sobre os dados já estruturados (ex.: prever quando uma estação tende a gerar mais peças com defeito, ou normalizar/limpar dados usando um modelo de linguagem para gerar resumos automáticos de turno).
 - **Arquitetura de Software**: define como o sistema é dividido em módulos/serviços (monólito simples vs. microsserviços — para um protótipo de faculdade, um monólito modular bem organizado é mais que suficiente), o design da API, o modelo de dados e o próprio dashboard.
 
+> Nota: este diagrama é da pesquisa original e ainda cita "anomalia" como uma das saídas do módulo de visão computacional — isso não reflete mais o escopo real do projeto (ver nota da seção 3.5). O pipeline implementado (Fases 1 e 2) cobre classificação/detecção de camada + contagem de parafusos/encaixe, sem o bloco de anomalia.
+
 ---
 
 ## 7. Linguagens e frameworks sugeridos (o que os alunos programam)
@@ -165,6 +173,8 @@ Todos os 5 pontos são **tecnicamente viáveis** com ferramentas gratuitas e ope
 | Identificação (QR) | Biblioteca `pyzbar` ou `opencv` (leitura) + `qrcode` (geração), ambas em Python | Reaproveita a mesma stack de visão computacional |
 
 Com essa stack, **100% do software é escrito pelos alunos** — Python, MQTT, FastAPI/Node, PostgreSQL e React/Streamlit são todos gratuitos e open-source. O único investimento necessário é o **hardware físico** (câmera, Raspberry Pi, e opcionalmente RFID), conforme pedido no desafio.
+
+> **Situação real do projeto (20/09/2026):** stack efetivamente usada até agora — Python + TensorFlow/Keras (Fase 1) e Ultralytics YOLO (Fase 2) para IA, FastAPI + SQLite para backend, Streamlit para dashboard, hotspot de celular no lugar de MQTT/rede dedicada (ver `fase-0-validacao-e-escopo.md`). MQTT, PostgreSQL, React e QR/RFID seguem como evolução futura, não implementados ainda.
 
 ---
 
@@ -185,6 +195,8 @@ Depois que os dados brutos (contagens, tempos, status) estão no banco, a IA pod
 - **Classificação de causas prováveis de anomalia**: se o dataset de defeitos crescer, um modelo pode começar a agrupar/categorizar os tipos de defeito mais comuns automaticamente (clustering), ajudando a apontar causas raiz.
 
 Essas duas frentes (IA na borda para gerar dados vs. IA sobre os dados já estruturados) deixam claro o uso da matéria de **IA Aplicada** em dois pontos diferentes do pipeline, o que é interessante para a avaliação acadêmica.
+
+> Nota: os exemplos acima ("taxa de defeito", "anomalia detectada") são da pesquisa original e citam o cenário de detecção de avaria, que foi removido do escopo (seção 3.5). A ideia geral desta seção (IA aplicada sobre os dados já estruturados, ex.: resumos automáticos de turno) continua válida e pode ser adaptada para as métricas reais hoje coletadas (taxa de camada incorreta, contagem de parafuso/encaixe insuficiente).
 
 ---
 
@@ -221,6 +233,8 @@ Ou seja: a única fronteira real de "precisa comprar" é a **câmera + eventualm
 3. Montar um pequeno dataset inicial de fotos da peça para treinar o primeiro modelo de detecção.
 4. Prototipar o pipeline ponta a ponta com hardware simples (webcam + notebook) antes de comprar qualquer placa dedicada.
 5. Desenhar o modelo de dados (o que exatamente vamos gravar por evento) — ponto de encontro entre Arquitetura de Software e IA Aplicada.
+
+> **Situação real do projeto (20/09/2026):** os passos 1-4 já foram concluídos (ver `fase-0-validacao-e-escopo.md` e `fase-2-plano.md`). O item "anomalia/OK-NG para uma segunda fase" citado no passo 2 foi posteriormente removido do escopo (seção 3.5).
 
 ---
 

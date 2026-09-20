@@ -28,7 +28,7 @@ Sem isso, qualquer código escrito agora tem alto risco de retrabalho.
 
 ### 2.2 Acesso à peça e ao processo
 - [x] **Fotografar/filmar a peça em diferentes estágios:** sim, acesso total às peças.
-- [x] **Fotografar peça com defeito/avaria:** permitido, mas **o foco inicial do laboratório não é defeito/avaria** — é verificar **se a peça está montada corretamente de acordo com a respectiva estação**. Isso muda a prioridade do MVP (ver seção 7).
+- [x] **Fotografar peça com defeito/avaria:** permitido, mas **o foco inicial do laboratório não é defeito/avaria** — é verificar **se a peça está montada corretamente de acordo com a respectiva estação**. Isso mudou a prioridade do MVP (ver seção 7). **Atualização 20/09/2026:** essa frente foi formalmente removida do escopo do projeto (não só adiada) — ver `fase-2-plano.md`, seção 7, já que o laboratório não disponibiliza peças com defeito real para treinar esse tipo de modelo.
 - [x] **Peça emprestada fora do horário:** não é possível — **toda captura de imagem só pode ser feita presencialmente na sala de treinamento**.
 - [x] **Variações da peça:** existe uma peça-base (sem nada montado) e depois camadas por estação — **estação 1: camada verde, estação 2: camada amarela, estação 3: camada azul, estação 4: camada vermelha**. Também há acesso às peças individuais/componentes usados em cada estação.
 
@@ -54,10 +54,10 @@ A resposta do item 2.2 muda a prioridade original: o laboratório deixou claro q
 - Envio dos eventos para um backend simples.
 - Dashboard básico mostrando: total de peças, taxa de acerto/inconsistência, tempo médio de ciclo.
 
-### 🔜 Fica para uma Fase 2 (se o tempo permitir)
-- Verificação mais fina de montagem (contagem de parafusos/encaixes específicos, não só a cor da camada).
-- Detecção de avarias/quebras (dataset de defeito, se o laboratório disponibilizar exemplos reais).
-- Identificação por QR Code/RFID (qual peça específica, não só qual estação).
+### 🔜 Fica para a Fase 2 (se o tempo permitir)
+- Verificação mais fina de montagem (contagem de parafusos e peças de encaixe específicas, não só a cor da camada) — **em andamento, ver `fase-2-plano.md`**.
+- ~~Detecção de avarias/quebras~~ — **removido do escopo do projeto em 20/09/2026** (o laboratório não disponibiliza peças com defeito real para treinar esse tipo de modelo; ver `fase-2-plano.md`, seção 7).
+- Identificação por QR Code/RFID (qual peça específica, não só qual estação) — explicação conceitual de como funcionaria registrada em `fase-2-plano.md`, seção 7.1.
 - Replicação para as demais estações (incluindo as de reciclagem/desmontagem).
 
 **Por quê essa mudança:** classificar "qual camada de cor está presente" é uma tarefa de visão computacional mais simples e com menos ambiguidade do que detectar parafuso a parafuso — e é literalmente o que o laboratório pediu como prioridade. Isso também reduz o tamanho do dataset necessário para o MVP: como as classes são bem distintas visualmente (cores diferentes), o modelo deve aprender com relativamente poucas imagens por classe.
@@ -84,8 +84,8 @@ Como o MVP agora é **classificação por cor de camada** (verde/amarelo/azul/ve
 
 ### 4.3 Anotação e ferramenta — atenção à confidencialidade
 O laboratório deixou claro que as imagens são de uso **restrito a fins acadêmicos e à Renault** — isso significa que **não podemos usar um projeto público** em ferramentas de anotação:
-- **Roboflow:** usar apenas em **projeto privado** (o plano gratuito permite projetos privados; evitar qualquer opção de "publicar"/tornar o dataset público).
-- **Alternativa mais segura:** **CVAT** rodando localmente (self-hosted, open-source) ou em um Docker no próprio notebook do grupo — garante que nenhuma imagem saia para servidor de terceiros.
+- ⚠️ **Correção importante (verificado em conversa posterior):** o plano gratuito do Roboflow ("Public") **não permite projetos privados** — qualquer dataset criado nele vai para o Roboflow Universe, público. Por isso o Roboflow foi descartado como opção para este projeto.
+- **Ferramenta escolhida: CVAT**, rodando localmente (self-hosted, open-source) via Docker no próprio notebook do grupo — garante que nenhuma imagem saia para servidor de terceiros. Já instalado e em uso (ver `fase-2-plano.md`).
 - Independentemente da ferramenta, as imagens ficam armazenadas apenas em equipamentos do grupo (conforme autorizado), nunca em repositório público (ex.: não subir para um GitHub público).
 
 ### 4.5 Resultado real da primeira coleta (registrado em 08/09/2026)
@@ -117,8 +117,7 @@ O laboratório deixou claro que as imagens são de uso **restrito a fins acadêm
 
 - ✅ **Dataset de camadas está mais do que suficiente para o MVP.** A meta original era ~40-60 imagens/classe; o grupo trouxe entre 281 e 468 por classe — dá para treinar com uma divisão tradicional de **treino/validação/teste (ex.: 70/15/15)** e ainda sobra margem para validar bem o modelo antes de testar ao vivo na bancada.
 - ⚠️ **Leve desbalanceamento entre classes** (281 a 468) — não é grave, mas ao treinar vale ou (a) usar *class weights*/balanceamento no treino, ou (b) simplesmente limitar todas as classes ao tamanho da menor (~281) para manter o treino balanceado. Qualquer uma resolve.
-- 🔴 **Imagens de peças individuais são insuficientes para qualquer uso no momento** (0 a 19 por peça — precisaria de dezenas por classe, no mínimo). Isso **não bloqueia o MVP** (que usa só as imagens de camada montada), mas é um item pendente para quando o grupo avançar à Fase 2 (verificação fina de parafusos/encaixes).
-- 🔴 **Falta a classificação alfabética (A/B/C/D)** dentro de cada cor de peça individual — como o próprio grupo já notou, se a Fase 2 exigir diferenciar as variações de uma mesma cor, será necessária uma sessão de captura dedicada, fotografando cada peça separadamente (não em conjunto) e já organizando os arquivos por essa subclasse (ex.: `peca_azul_A_001.jpg`, `peca_azul_B_001.jpg`). **Recomendação: não fazer isso agora** — só vale a pena investir tempo de captura nisso quando o MVP de camada já estiver validado e o grupo decidir avançar para inspeção fina de componentes.
+- 🔴 **Imagens de peças individuais (A/B/C/D) não serão usadas.** Essa linha de investigação foi descartada permanentemente na Fase 2 (ver `fase-2-plano.md`, seção 2) — o encaixe mecânico entre as peças de uma mesma cor já impede montagem incorreta (design *poka-yoke*), tornando a verificação fina componente a componente redundante, além de a semelhança visual entre elas tornar a anotação propensa a erro. **O foco de captura para a Fase 2 passou a ser exclusivamente parafusos e as 4 peças de encaixe (formatos distintos, usadas nas camadas amarela e vermelha)** — ver `fase-2-plano.md`, seções 3 e 4.1.
 
 ---
 
@@ -129,7 +128,7 @@ O laboratório deixou claro que as imagens são de uso **restrito a fins acadêm
 | Wi-Fi é compartilhado com toda a faculdade (não dedicado ao projeto) | Testar logo na primeira visita se o Wi-Fi da faculdade permite comunicação **dispositivo-a-dispositivo** (muitas redes corporativas/educacionais têm "client isolation", que bloqueia MQTT entre dispositivos na mesma rede). Se bloquear, a alternativa combinada na resposta é usar **hotspot do celular** como rede isolada só para o protótipo — simples e já validado como opção pelo laboratório. |
 | Pode precisar de extensão para energia na bancada | Item de logística simples — levar uma extensão/régua na sessão de testes. |
 | Captura só presencial, 1x por semana (terça 19h-22h) | Já refletido no plano de coleta (seção 4) — sessões precisam ser roteirizadas. Também significa que **o cronograma do projeto depende diretamente do número de terças disponíveis até a entrega** — vale mapear isso num cronograma à parte. |
-| Foco inicial é "camada correta por estação", não avaria | Escopo do MVP revisado (seção 3) — tarefa de classificação por cor, mais simples que detecção fina de defeito. |
+| Foco inicial é "camada correta por estação", não avaria | Escopo do MVP revisado (seção 3) — tarefa de classificação por cor, mais simples que detecção fina de defeito. Avaria depois removida permanentemente do escopo (seção 3). |
 | Confidencialidade restrita a uso acadêmico + Renault | Nenhum dado/imagem pode ser publicado ou usado em repositório/projeto público (seção 4.3). Vale também evitar prints/vídeos do processo em apresentações fora do contexto acadêmico sem autorização. |
 | Dados podem ficar em equipamento próprio do grupo | Não é obrigatório usar servidor do laboratório — o backend/banco de dados pode rodar no notebook de algum integrante do grupo durante o desenvolvimento. |
 | **Decisão: hotspot de celular** como rede do protótipo | Rede isolada e sob controle do grupo — evita o risco de *client isolation* do Wi-Fi da faculdade. Broker MQTT e backend podem rodar no próprio notebook, todos os dispositivos (notebook, e futuramente placas) conectam no mesmo hotspot. Ponto de atenção: **consumo de dados/bateria do celular** durante as sessões de 3h — vale levar carregador. |
