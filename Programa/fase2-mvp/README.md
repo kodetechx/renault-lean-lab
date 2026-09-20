@@ -148,8 +148,7 @@ Abre em `http://localhost:8501`, já apontando para `http://localhost:8000` (dá
 ## 6. Inferência ao vivo
 
 ```bash
-python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v1/weights/best.pt \
-    --estacao camada_verde --parafusos_esperados 4 --api_url http://localhost:8000
+python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v1/weights/best.pt --estacao camada_verde --parafusos_esperados 4 --api_url http://localhost:8000
 ```
 
 Pressione `q` para sair. Argumentos: `--camera` (índice da webcam, padrão 0), `--backup_file` (padrão `eventos_backup_yolo.csv`).
