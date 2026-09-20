@@ -1,7 +1,7 @@
 # Fase 2 — Detecção da Peça Completa e Contagem de Parafusos via YOLO
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** 🟢 Primeiro treino de teste (lote 1) concluído com sucesso — pipeline ponta a ponta validado
+**Status:** 🟢 Pipeline ponta a ponta validado (treino + inferência ao vivo) — próximo bloqueio é dado (captura de parafuso) e alinhamento com a Renault
 **Depende de:** `fase-1-plano.md` (MVP de classificação de camada, concluído) e `fase-0-validacao-e-escopo.md`
 **Prioridade escolhida pelo grupo (set/2026):** detecção de objeto (YOLO) como substituto do MobileNetV2 para a verificação da camada + contagem de parafusos, entre as 4 frentes possíveis da Fase 2 (as outras — detecção de avaria, QR/RFID, replicação multi-estação — ficam para depois, ver seção 7).
 
@@ -58,6 +58,27 @@ Rodado com ~1.001 imagens já reanotadas (801 treino / 200 validação), modelo 
 
 **Ressalva importante sobre `parafuso`:** o script imprimiu `parafuso: 0,965` na lista "mAP50-95 por classe", mas esse número **deve ser desconsiderado**. A classe `parafuso` nem aparece na tabela nativa de validação do Ultralytics (que lista só as 5 classes de camada), o que indica fortemente que o split de validação (200 imagens sorteadas do lote 1) não continha nenhuma instância real de parafuso — consistente com o relatório do `build_yolo_dataset.py`, que registrou apenas 2 instâncias de `parafuso` em todo o lote 1. Quando uma classe não tem nenhum exemplo de verdade no conjunto de validação, o mAP calculado para ela cai num caso degenerado (pode sair artificialmente alto ou zero, dependendo da implementação) e não reflete qualidade real de detecção. Com só 2 instâncias de treino, é matematicamente impossível que o modelo já reconheça parafuso de forma confiável. **A contagem de parafusos no `infer_webcam_yolo.py` continua não-funcional até a sessão de captura dedicada de parafusos (linha "Alta prioridade" da tabela acima) ser feita e um novo treino/validação com instâncias reais de parafuso for rodado.**
 
+### 3.2 Teste de inferência ao vivo (webcam, 20/09/2026)
+
+Rodado `infer_webcam_yolo.py` com o `best.pt` do lote 1. Resultado: **detecção de peça por cor funcionando corretamente ao vivo**, via webcam, confirmando que o modelo generaliza além do conjunto de validação (câmera/condições de luz diferentes das fotos de treino). Este é o primeiro teste end-to-end do pipeline completo da Fase 2 (captura → anotação → treino → inferência ao vivo → log de evento).
+
+Pendente de confirmação: teste explícito com **duas ou mais peças de cores diferentes simultaneamente no quadro** — é o cenário que motivou tecnicamente a escolha do YOLO sobre o MobileNetV2 (seção 2, revisão 2) e ainda não foi formalmente registrado como testado.
+
+### 3.3 Risco identificado: generalização para múltiplas peças no quadro (20/09/2026)
+
+Todas as 1.783 imagens de camada anotadas no CVAT até agora contêm **apenas 1 peça por frame**. Isso é relevante porque, embora modelos de detecção (YOLO) aprendam a reconhecer a aparência local de cada objeto — e por isso tendam a generalizar melhor que um classificador de imagem inteira mesmo sem ter visto múltiplos objetos juntos no treino — essa generalização não é garantida em todos os casos. Riscos concretos identificados:
+
+1. **Peças encostadas ou parcialmente sobrepostas:** se as bounding boxes ficarem muito próximas ou uma peça tampar parte da outra, a etapa de NMS (supressão de caixas duplicadas) pode eliminar uma detecção válida, ou as caixas podem se sobrepor incorretamente.
+2. **Composição/enquadramento não vistos no treino:** as fotos de treino sempre tiveram a peça centralizada e próxima da câmera; uma cena com duas peças mais afastadas ou nas bordas do frame é uma condição visual nova, que pode reduzir a confiança das detecções.
+3. **Troca de identidade no tracking:** o `model.track()` pode, em cruzamentos rápidos entre peças parecidas, trocar o `track_id` de uma peça pela outra (problema de rastreamento, não de detecção em si).
+
+**Mitigação caso o problema se confirme, sem precisar recomeçar o treino do zero:**
+- Fazer a "captura multi-peça" já prevista na tabela acima (prioridade média) e anotar essas imagens no CVAT com uma caixa por peça.
+- Reaproveitar o `best.pt` atual como ponto de partida do próximo treino (fine-tuning incremental, passando `--model` apontando para o `best.pt` em vez do checkpoint `yolo11n.pt` original), em vez de treinar do zero.
+- Como paliativo mais rápido (sem retreinar), testar reduzir o `CONFIDENCE_THRESHOLD` e/ou o limiar de IoU do NMS em `infer_webcam_yolo.py`, o que pode reduzir supressão indevida entre caixas próximas.
+
+Ainda não testado formalmente em campo — ver item correspondente na seção 8.
+
 ---
 
 ## 4. Passo 0: alinhar com a Renault (revisado)
@@ -78,7 +99,7 @@ Com o CVAT já instalado e configurado:
 4. Importar as fotos novas de parafuso (quando capturadas) e anotar cada parafuso individualmente com a classe `parafuso`.
 5. Exportar as anotações em formato **YOLO** (exportação nativa do CVAT).
 
-> Dica prática, já validada na Fase 1: comecem anotando um lote pequeno (ex.: 100-150 imagens de peça, já reaproveitadas) e treinem uma primeira versão rápida do modelo cedo, só para validar o pipeline completo (anotação → export → treino → inferência) antes de anotar o restante. **Feito com sucesso em 20/09/2026 com o lote 1 (~1.001 imagens) — ver resultado na seção 3.1.**
+> Dica prática, já validada na Fase 1: comecem anotando um lote pequeno (ex.: 100-150 imagens de peça, já reaproveitadas) e treinem uma primeira versão rápida do modelo cedo, só para validar o pipeline completo (anotação → export → treino → inferência) antes de anotar o restante. **Feito com sucesso em 20/09/2026 com o lote 1 (~1.001 imagens) — ver resultado nas seções 3.1 e 3.2.**
 
 ---
 
@@ -116,9 +137,10 @@ Com o CVAT já instalado e configurado:
 - [x] Export das anotações em formato YOLO.
 - [x] Ambiente Python com `ultralytics` instalado.
 - [x] Primeiro treino de teste rodado (lote 1) — pipeline ponta a ponta validado (ver seção 3.1). Resultado: detecção de camada excelente (mAP50 geral 0,995); contagem de parafuso ainda não confiável (poucas instâncias anotadas).
+- [x] Testar `infer_webcam_yolo.py` ao vivo com o modelo do lote 1 — detecção de peça por cor confirmada funcionando ao vivo (ver seção 3.2).
+- [ ] Confirmar formalmente o teste com múltiplas peças de cores diferentes simultaneamente no quadro (o cenário que motivou a escolha do YOLO) — ver risco identificado na seção 3.3, já que todo o dataset atual foi anotado com 1 peça por imagem.
 - [ ] (Opcional, reforça robustez) Nova sessão de captura com múltiplas peças no mesmo quadro.
 - [ ] Anotar lote 2 (restante das 1.783 imagens) para ampliar o dataset de camada.
-- [ ] Testar `infer_webcam_yolo.py` ao vivo com o modelo do lote 1.
 - [ ] Retreinar com dataset de parafuso adequado, uma vez capturado.
 
 ---
