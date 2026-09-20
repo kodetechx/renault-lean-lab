@@ -1,7 +1,21 @@
+# Ambientes virtuais
 Programa/fase1-mvp/venv/
+Programa/fase2-mvp/venv/
+
+# Fotos brutas e datasets derivados (pesados, regeneraveis)
+Imagens/
+Programa/fase1-mvp/raw_images/
 Programa/fase1-mvp/dataset/
-# Programa/fase1-mvp/raw_images/
-# Imagens/
+Programa/fase2-mvp/raw_images/
+Programa/fase2-mvp/cvat_exports/
+Programa/fase2-mvp/dataset_yolo/images/
+
+# Saidas de treino/validacao do YOLO (mantem apenas o best.pt)
+runs/
+*.pt
+!Programa/fase2-mvp/runs_yolo/*/weights/best.pt
+
+# Gerados automaticamente
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

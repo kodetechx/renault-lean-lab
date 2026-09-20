@@ -1,0 +1,2 @@
+timestamp,estacao,classe_detectada,status,tempo_ciclo_s,parafusos_detectados
+2026-09-20T01:23:49.636668,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,10.21,0

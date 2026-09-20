@@ -1,0 +1,10 @@
+path: C:\Users\Tiago\Documents\PROJETOS 2026\renault-lean-lab\Programa\fase2-mvp\dataset_yolo
+train: images/train
+val: images/val
+names:
+  0: camada_base
+  1: camada_verde
+  2: camada_amarela
+  3: camada_azul
+  4: camada_vermelha
+  5: parafuso
