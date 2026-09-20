@@ -43,17 +43,21 @@ CAMADA_CLASSES = {"camada_base", "camada_verde", "camada_amarela", "camada_azul"
 PARAFUSO_CLASS = "parafuso"
 
 
-def log_event(api_url, csv_backup_path, estacao, classe_detectada, status, ciclo_segundos, parafusos_detectados):
+def log_event(
+    api_url, csv_backup_path, estacao, classe_detectada, status, ciclo_segundos, parafusos_detectados, parafusos_esperados
+):
     """
-    Envia o evento para a API do backend. Se a API estiver inacessivel
-    (ex.: instabilidade do hotspot), o evento cai em um CSV de backup local.
-    Mesmo padrao usado no infer_webcam.py da Fase 1.
+    Envia o evento para a API do backend (fase2-mvp/backend). Se a API estiver
+    inacessivel (ex.: instabilidade do hotspot), o evento cai em um CSV de
+    backup local. Mesmo padrao usado no infer_webcam.py da Fase 1.
     """
     payload = {
         "estacao": estacao,
         "classe_detectada": classe_detectada,
         "status": status,
         "tempo_ciclo_s": ciclo_segundos,
+        "parafusos_detectados": parafusos_detectados,
+        "parafusos_esperados": parafusos_esperados,
     }
     try:
         resp = requests.post(f"{api_url}/eventos", json=payload, timeout=2)
@@ -176,7 +180,16 @@ def main():
             else:
                 status = "ALERTA_PARAFUSOS_INSUFICIENTES"
 
-            log_event(args.api_url, csv_path, args.estacao, class_name, status, tempo_ciclo, parafusos_na_peca)
+            log_event(
+                args.api_url,
+                csv_path,
+                args.estacao,
+                class_name,
+                status,
+                tempo_ciclo,
+                parafusos_na_peca,
+                args.parafusos_esperados,
+            )
             print(
                 f"[EVENTO] track_id={track_id} classe={class_name} "
                 f"parafusos_detectados={parafusos_na_peca}/{args.parafusos_esperados} status={status} "
