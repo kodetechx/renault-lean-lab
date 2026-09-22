@@ -1,2 +1,6 @@
 timestamp,estacao,classe_detectada,status,tempo_ciclo_s,parafusos_detectados
 2026-09-20T01:23:49.636668,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,10.21,0
+2026-09-21T19:18:26.622699,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,10.82,0
+2026-09-21T19:18:30.859964,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.26,0
+2026-09-21T19:18:35.390198,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.51,0
+2026-09-21T19:18:39.645092,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.25,0

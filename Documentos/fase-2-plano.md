@@ -112,7 +112,7 @@ Alternativas consideradas e não escolhidas, mantidas aqui como registro de deci
 
 Com o CVAT já instalado e configurado:
 
-1. Criar um projeto no CVAT (ex.: "Lean Lab — Peça, Parafusos e Encaixes").
+1. Criar um projeto no CVAT (ex.: "Lean Lab — Peça, Parafusos e Encaixes"). Se o projeto atual já existir, basta adicionar as classes novas a ele (ver seção 5.1) em vez de criar um projeto separado.
 2. Definir as classes finais: `camada_base`, `camada_verde`, `camada_amarela`, `camada_azul`, `camada_vermelha`, `parafuso`, `encaixe_circular`, `encaixe_retangular`, `encaixe_hexagono`, `encaixe_capsula`.
 3. **Importar as 1.783 imagens já existentes** (reaproveitadas da Fase 0) e desenhar uma bounding box ao redor da peça inteira em cada uma, atribuindo a classe de cor correspondente.
 4. Importar as fotos novas de parafuso e das 4 peças de encaixe (quando capturadas) e anotar cada uma individualmente com a classe correspondente.
@@ -120,7 +120,16 @@ Com o CVAT já instalado e configurado:
 
 > Dica prática, já validada na Fase 1: comecem anotando um lote pequeno (ex.: 100-150 imagens de peça, já reaproveitadas) e treinem uma primeira versão rápida do modelo cedo, só para validar o pipeline completo (anotação → export → treino → inferência) antes de anotar o restante. **Feito com sucesso em 20/09/2026 com o lote 1 (~1.001 imagens) — ver resultado nas seções 3.1 e 3.2.**
 
-> Lembrete técnico (já coberto por `build_yolo_dataset.py`, seção 6): ao adicionar as novas classes de encaixe, atualizar a lista `MASTER_CLASSES` no script para incluir `encaixe_circular`, `encaixe_retangular`, `encaixe_hexagono`, `encaixe_capsula`, mantendo o remapeamento por nome (não por índice) para evitar o mesmo risco de inconsistência já documentado.
+> Lembrete técnico (já coberto por `build_yolo_dataset.py`, seção 6): ao adicionar as novas classes de encaixe, atualizar a lista `MASTER_CLASSES` no script para incluir `encaixe_circular`, `encaixe_retangular`, `encaixe_hexagono`, `encaixe_capsula`, mantendo o remapeamento por nome (não por índice) para evitar o mesmo risco de inconsistência já documentado. **Feito em 22/09/2026** — script atualizado com as 10 classes finais.
+
+### 5.1 Duas fontes de anotação de parafuso/encaixe (registrado em 22/09/2026)
+
+Uma mesma imagem no CVAT pode ter várias caixas de classes diferentes ao mesmo tempo — a caixa da peça inteira (`camada_amarela`, por exemplo) e, dentro dela, uma caixa separada para cada parafuso/peça de encaixe visível naquela mesma foto. O grupo decidiu combinar duas fontes de anotação, não usar só uma:
+
+1. **Anotação retroativa nas fotos de camada já existentes** (inclusive as do lote 1, já usadas no primeiro treino): reabrir essas imagens no CVAT e adicionar caixas de `parafuso`/encaixe onde aparecerem, além da caixa da peça inteira já existente. Vantagem: ensina o modelo a reconhecer esses objetos no contexto real (mesmo ângulo/distância da captura na estação), sem depender de nova sessão presencial. Risco: os objetos ficam pequenos na imagem (foto pensada para mostrar a peça inteira), o que pode ser mais difícil de aprender sem reforço.
+2. **Fotos dedicadas, mais de perto** (sessão de captura nova, ver tabela da seção 3): dá exemplos "limpos" e variados do objeto isolado (ângulos, iluminação), complementando o ponto fraco da opção 1.
+
+**Nota técnica:** como parafuso/encaixe são pequenos, se a detecção deles vier fraca depois do retreino, considerar aumentar `--imgsz` no `train_yolo.py` (ex.: 960 ou 1280, em vez do padrão 640) para preservar mais detalhe desses objetos pequenos no treino — mais lento, mas ajuda especificamente com objetos pequenos numa cena maior.
 
 ---
 
@@ -134,6 +143,7 @@ Com o CVAT já instalado e configurado:
 | Verificação de completude | **Regra de negócio por estação** (contagem de parafusos e peças de encaixe detectados vs. o esperado — tabela da seção 4) | Evita precisar fotografar todos os estados possíveis de montagem incompleta |
 | Detecção de presença (vazio vs. peça) | Natural — nenhuma detecção de classe de peça na ROI = vazio | A classe `vazio` da Fase 1 deixa de ser necessária |
 | Contagem sem recontagem da mesma peça parada | Tracking nativo do Ultralytics (`model.track()`, baseado em ByteTrack), já testado ao vivo com sucesso, inclusive com múltiplas peças | Mais robusto que a máquina de estados da Fase 1 |
+| Retreino com classes novas | **Fine-tuning a partir do `best.pt` do lote 1** (passado em `--model`), não treino do zero — o Ultralytics reinicializa automaticamente a camada de saída para as 10 classes novas, mantendo o aprendizado já obtido sobre cor de camada | Aproveita o treino já validado (seção 3.1) em vez de descartá-lo |
 | O que muda no `infer_webcam.py` | De "1 rótulo por frame" para "lista de detecções (caixa + classe + confiança) por frame"; lógica de contagem de parafusos e peças de encaixe comparada à receita esperada por estação (tabela da seção 4) — **pendente: hoje o script usa um único `--parafusos_esperados` fixo por execução e não checa encaixe; falta ajustar para a receita variar por estação (0 na base, 4 nas demais) e somar a checagem das 4 classes de encaixe quando a estação for amarela/vermelha** | — |
 | Backend/dashboard | Sem mudança estrutural — a API já recebe eventos genéricos; muda o conteúdo do evento (incluir contagem de parafusos e de peças de encaixe detectadas) | Reforça que a separação em camadas da Fase 1.2 já isola essa migração |
 
@@ -169,13 +179,14 @@ Na prática, isso permitiria, por exemplo, rastrear o histórico completo de uma
 - [x] Reanotação de um primeiro lote das 1.783 imagens já existentes (peça inteira, por cor) — lote 1, ~1.001 imagens.
 - [ ] Nova sessão de captura de fotos de parafuso (isolado + em contexto).
 - [ ] Nova sessão de captura das 4 peças de encaixe (isoladas + em contexto, nas camadas amarela e vermelha).
+- [ ] Anotação retroativa de parafuso/encaixe nas fotos de camada já existentes (seção 5.1, fonte 1).
 - [x] Export das anotações em formato YOLO.
 - [x] Ambiente Python com `ultralytics` instalado.
 - [x] Primeiro treino de teste rodado (lote 1) — pipeline ponta a ponta validado (ver seção 3.1). Resultado: detecção de camada excelente (mAP50 geral 0,995); contagem de parafuso ainda não confiável (poucas instâncias anotadas).
 - [x] Testar `infer_webcam_yolo.py` ao vivo com o modelo do lote 1 — detecção de peça por cor confirmada funcionando ao vivo, inclusive com múltiplas peças simultâneas (ver seções 3.2 e 3.3).
-- [ ] Atualizar `MASTER_CLASSES` em `build_yolo_dataset.py` com as 4 novas classes de encaixe.
+- [x] Atualizar `MASTER_CLASSES` em `build_yolo_dataset.py` com as 4 novas classes de encaixe (feito em 22/09/2026).
 - [ ] Ajustar `infer_webcam_yolo.py` para a receita de completude variar por estação (parafuso + encaixe, tabela da seção 4), em vez do `--parafusos_esperados` fixo atual.
-- [ ] Retreinar com dataset de parafuso e encaixe real, uma vez capturado.
+- [ ] Retreinar (fine-tuning a partir do `best.pt` do lote 1) com dataset de parafuso e encaixe real, uma vez capturado.
 - [ ] (Opcional, reforça robustez) Nova sessão de captura formal com múltiplas peças no mesmo quadro, com anotação.
 - [ ] Anotar lote 2 (restante das 1.783 imagens) para ampliar o dataset de camada.
 
@@ -183,6 +194,6 @@ Na prática, isso permitiria, por exemplo, rastrear o histórico completo de uma
 
 ## 9. Como isso conecta com as 3 matérias
 
-- **IA Aplicada:** detecção de objetos (YOLO), reaproveitamento de dataset entre abordagens (classificação → detecção), decisão de regra de negócio vs. classe visual para completude, decisão de granularidade de detecção (peças de encaixe como classes próprias vs. A/B/C/D descartadas) documentada como processo de refinamento de escopo.
+- **IA Aplicada:** detecção de objetos (YOLO), reaproveitamento de dataset entre abordagens (classificação → detecção), decisão de regra de negócio vs. classe visual para completude, decisão de granularidade de detecção (peças de encaixe como classes próprias vs. A/B/C/D descartadas) documentada como processo de refinamento de escopo, anotação multi-classe por imagem (peça + componentes) como técnica de contexto real.
 - **Arquitetura de Software:** evolução do contrato de evento (JSON com contagem de parafusos e peças de encaixe), mantendo a separação em camadas já estabelecida na Fase 1.2; histórico de decisões documentado (seções 2 e 4.1) como registro de arquitetura evolutiva.
 - **Arquitetura de Sistemas IoT:** robustez da captura na borda a cenários reais (múltiplos objetos simultâneos na bancada, já validada), simplificação da lógica de presença sem sensor físico dedicado, avaliação conceitual de QR Code/RFID para identificação individual de peças (seção 7.1).
