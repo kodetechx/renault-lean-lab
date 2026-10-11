@@ -1,12 +1,12 @@
 # Fase 2 — Detecção de objetos com YOLO
 
-Evolução da Fase 1 (classificação com MobileNetV2, um rótulo por frame) para **detecção de objetos** com YOLO (Ultralytics): o modelo localiza várias peças no mesmo frame, e o tracking nativo identifica quando uma peça nova entra na cena. Isso elimina a classe artificial "vazio" da Fase 1 — cena sem detecção já significa vazio.
+Evolução da Fase 1 (classificação com MobileNetV2, um rótulo por frame) para **detecção de objetos** com YOLO (Ultralytics): o modelo localiza várias peças no mesmo frame, conta parafusos e peças de encaixe dentro de cada peça, e o tracking nativo identifica quando uma peça nova entra na cena. Isso elimina a classe artificial "vazio" da Fase 1 — cena sem detecção já significa vazio.
 
 Contexto, decisões técnicas e pendências: [`Documentos/fase-2-plano.md`](../../Documentos/fase-2-plano.md).
 
 ## Classes
 
-Ordem fixa (vira o ID usado no treino), definida em `MASTER_CLASSES` no `build_yolo_dataset.py`:
+Ordem fixa (vira o ID usado no treino), definida em `MASTER_CLASSES` no `build_yolo_dataset.py`. As 6 primeiras vieram do primeiro treino (lote 1); as 4 últimas (peças de encaixe) foram acrescentadas no lote 2 — a ordem das 6 primeiras não deve mudar, só é permitido acrescentar classes no final.
 
 | ID | Classe |
 |----|--------|
@@ -16,27 +16,48 @@ Ordem fixa (vira o ID usado no treino), definida em `MASTER_CLASSES` no `build_y
 | 3 | `camada_azul` |
 | 4 | `camada_vermelha` |
 | 5 | `parafuso` |
+| 6 | `encaixe_circular` |
+| 7 | `encaixe_retangular` |
+| 8 | `encaixe_hexagono` |
+| 9 | `encaixe_capsula` |
 
 ## Estrutura
 
 ```
 fase2-mvp/
-├── build_yolo_dataset.py     # junta os exports do CVAT em um dataset único
+├── build_yolo_dataset.py     # junta os exports do CVAT (lote 1 + lote 2 + futuros) em um dataset único
 ├── train_yolo.py             # treina e avalia o modelo
 ├── infer_webcam_yolo.py      # inferência ao vivo pela webcam
 ├── requirements.txt
 ├── backend/                  # API FastAPI + banco SQLite (recebe os eventos)
 ├── dashboard/                # dashboard Streamlit (consome a API)
-├── dataset_yolo/
+├── dataset_yolo_v2/          # dataset atual (lote 1 + lote 2, 10 classes)
 │   ├── data.yaml             # versionado
 │   ├── labels/{train,val}/   # versionado (anotações)
 │   └── images/{train,val}/   # NÃO versionado (~6 GB, gerado pelo script)
-├── runs_yolo/lean_lab_v1/    # resultados do treino (só o best.pt fica versionado)
-├── cvat_exports/             # NÃO versionado (~6 GB, zips do CVAT)
+├── runs_yolo/
+│   └── lean_lab_v1/           # 1º treino (lote 1, 6 classes) — só o best.pt fica versionado
+├── cvat_exports/             # NÃO versionado (~6 GB, zips do CVAT, lote 1 + lote 2)
 └── raw_images/               # NÃO versionado (~3,9 GB, fotos originais)
 ```
 
-O que não é versionado (`.gitignore`) precisa existir localmente para refazer o dataset — veja "Dados que não estão no repositório".
+O que não é versionado (`.gitignore`) precisa existir localmente para refazer o dataset — veja "Dados que não estão no repositório". Datasets futuros (`dataset_yolo_v3`, etc.) já caem automaticamente na mesma regra do `.gitignore` (`images/` ignorado, `labels/`+`data.yaml` versionados).
+
+## 0. GPU (se tiver uma disponível)
+
+O pacote `torch` do PyPI vem **CPU-only por padrão** no Windows — `pip install -r requirements.txt` sozinho não habilita a GPU, mesmo com uma NVIDIA disponível. Confira:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+Se vier `False` e você tem uma GPU NVIDIA, veja a versão de CUDA que o driver suporta (`nvidia-smi`, campo "CUDA Version") e reinstale o `torch` a partir do índice da PyTorch com a tag `cuXXX` correspondente, por exemplo (CUDA 12.9):
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cu129 torch torchvision
+```
+
+Sem isso, o treino roda inteiro na CPU — em `--imgsz 960` isso pode ser lento ao ponto de nunca terminar uma época numa máquina com pouca RAM (ver seção 3 e `fase-2-plano.md`, seção 3.5, para um caso real disso).
 
 ## 1. Instalar dependências
 
@@ -48,35 +69,57 @@ pip install -r requirements.txt
 
 ## 2. Montar o dataset
 
-Anote as imagens no CVAT (uma tarefa por camada) e exporte cada uma no formato **YOLO 1.1**, salvando os `.zip` em `cvat_exports/`. Depois:
+Anote as imagens no CVAT e exporte cada tarefa/lote como `.zip`, salvando todos em `cvat_exports/` (pode juntar lotes de datas diferentes na mesma pasta). Dois formatos de export são aceitos, inclusive misturados:
+
+- **"YOLO 1.1"** — só retângulos (usado no lote 1, as fotos de camada por cor).
+- **"CVAT for images 1.1"** (marcando **Save images**) — guarda retângulo, polígono e elipse; cada forma vira a caixa que a envolve (usado no lote 2, parafuso/encaixe/múltiplas peças).
 
 ```bash
 python build_yolo_dataset.py --zips_dir ./cvat_exports \
-    --images_dir ./raw_images --out_dir ./dataset_yolo --val_ratio 0.2
+    --images_dir ./raw_images --out_dir ./dataset_yolo_v2 --val_ratio 0.2
 ```
 
-O script **não** simplesmente descompacta tudo junto: em cada zip, o número da classe é a posição dela no `obj.names` *daquele* zip, e ele pode diferir entre exports. O script remapeia pelo **nome** da classe para os IDs globais de `MASTER_CLASSES`, evitando rótulos trocados sem erro aparente.
+`--out_dir` precisa ser uma pasta nova (o script recusa gravar dentro de `--zips_dir`/`--images_dir` ou numa pasta não vazia) — use um nome novo (`_v3`, `_v4`...) a cada dataset ampliado, para não perder a versão anterior nem confundir qual `best.pt` foi treinado com qual dataset.
 
-No final ele imprime um relatório. Vale ler os avisos antes de treinar:
+O script **não** simplesmente descompacta tudo junto: em cada zip, o número da classe é a posição dela no `obj.names` (ou `data.yaml`) *daquele* zip, e ele pode diferir entre exports. O script remapeia pelo **nome** da classe para os IDs globais de `MASTER_CLASSES`.
+
+Outros cuidados que ele já resolve sozinho:
+- **Imagem repetida entre lotes** (ex.: a mesma foto de camada do lote 1 foi reanotada no lote 2 com parafuso): mantém só a versão com mais anotações, comparando pelo conteúdo do arquivo — evita a mesma foto cair em treino e validação ao mesmo tempo.
+- **Split estratificado:** garante exemplos de toda classe na validação (no primeiro treino, `parafuso` ficou com zero exemplos na validação e o mAP dessa classe não significava nada — ver `fase-2-plano.md`, seção 3.1).
+- **Polígono/elipse → caixa:** convertido automaticamente; formas que não têm como virar caixa (`points`, máscara, tag) são ignoradas e contadas no relatório.
+
+No final ele imprime um relatório por classe (treino/validação, com aviso de "sem exemplos" ou "poucos exemplos") e por zip. Vale ler os avisos antes de treinar:
 - nomes de classe nos zips que não batem com `MASTER_CLASSES` (geralmente erro de digitação no CVAT);
 - anotações sem imagem correspondente em `--images_dir`;
-- imagens que ficaram sem anotação válida.
-
-A divisão treino/validação é aleatória por imagem (`--seed 42` por padrão).
+- imagens sem nenhuma anotação válida.
 
 > `data.yaml` grava o caminho **absoluto** do dataset na máquina onde foi gerado. Ao clonar o repositório em outro computador, edite a linha `path:` ou rode o script de novo.
 
 ## 3. Treinar
 
 ```bash
-python train_yolo.py --data ./dataset_yolo/data.yaml --epochs 50
+python train_yolo.py --data ./dataset_yolo_v2/data.yaml --epochs 50
 ```
 
-Opções úteis: `--model` (padrão `yolo11n.pt`, a variante nano, leve o bastante para CPU), `--imgsz 640`, `--batch 8` (reduza para 4 se faltar memória), `--name` (nome do experimento). Na primeira execução o Ultralytics baixa o `yolo11n.pt`, então é preciso ter internet.
+Opções:
+- `--model` — `yolo11n.pt` (padrão, nano) para começar do zero, ou o `best.pt` de um treino anterior para continuar dele (fine-tuning). Ao mudar de dataset com mais classes (ex.: lote 1 → lote 1+2), o Ultralytics reaproveita o que já foi aprendido e só reinicializa a camada de saída — aparece no log como `Transferred N/M items from pretrained weights`.
+- `--imgsz` (padrão 640) — parafuso e peças de encaixe são pequenos na cena; 960 ajuda a detectá-los melhor, mas é mais lento e pesa mais na memória.
+- `--batch` (padrão 8) — um número fixo, ou **`-1` (AutoBatch)** para o Ultralytics medir a VRAM livre e escolher o maior batch que cabe em ~60% dela. Recomendado em GPU com pouca VRAM: medido na prática, uma RTX 2050 (4GB) só cabe `batch=2` em `--imgsz 960`.
+- `--device` (padrão `''`, auto) — usa GPU automaticamente se o `torch` tiver CUDA (seção 0); force com `0` (1ª GPU) ou `cpu`.
+- `--workers` (padrão 4) — processos paralelos carregando imagens. O padrão do Ultralytics é 8; reduzido aqui porque notebooks com pouca RAM (ex.: 8GB) podem ficar sem memória antes da 1ª época com 8 workers em `--imgsz 960` — foi exatamente o que aconteceu num treino real deste projeto (processo morto sem gerar `results.csv`; diagnóstico completo em `fase-2-plano.md`, seção 3.5).
+- `--name` — nome do experimento (pasta em `--project`, padrão `runs_yolo`).
 
-Ao final o script avalia no conjunto de validação (mAP50, mAP50-95 geral e por classe) e indica o caminho do `best.pt`.
+Exemplo de retreino (fine-tuning) em notebook com GPU de 4GB e 8GB de RAM:
 
-### Resultado do treino `lean_lab_v1`
+```bash
+python train_yolo.py --data ./dataset_yolo_v2/data.yaml \
+    --model ./runs_yolo/lean_lab_v1/weights/best.pt \
+    --name lean_lab_v2 --epochs 60 --imgsz 960 --batch -1 --workers 4
+```
+
+Ao final o script avalia no conjunto de validação e imprime o mAP50/mAP50-95 geral e **por classe, junto com quantos exemplos de validação cada classe tem** — uma classe com 0 exemplos de validação não tem mAP que signifique nada (o Ultralytics preenche com o valor geral), e o script marca isso como "IGNORE".
+
+### Resultado do treino `lean_lab_v1` (lote 1, 6 classes)
 
 50 épocas, `yolo11n.pt`, `imgsz=640`, `batch=8`, 1001 imagens (801 treino / 200 validação). Última época:
 
@@ -90,8 +133,12 @@ Ao final o script avalia no conjunto de validação (mAP50, mAP50-95 geral e por
 Curvas, matriz de confusão e amostras de validação estão em `runs_yolo/lean_lab_v1/`.
 
 **Leia estes números com cautela:**
-- Instâncias anotadas por classe: `camada_base` 180, `camada_verde` 202, `camada_amarela` 206, `camada_azul` 209, `camada_vermelha` 202 e **`parafuso` apenas 2**. Portanto a detecção de parafuso **não tem base estatística** ainda; o resultado geral só reflete as camadas.
-- Métricas quase perfeitas em validação podem estar otimistas: o split é aleatório por imagem, então frames muito parecidos (mesma peça, mesma sessão) podem cair em treino e validação ao mesmo tempo. O teste real é a webcam, em condições de uso.
+- Instâncias anotadas por classe: `camada_base` 180, `camada_verde` 202, `camada_amarela` 206, `camada_azul` 209, `camada_vermelha` 202 e **`parafuso` apenas 2**. A detecção de parafuso **não tinha base estatística** nesse treino — resolvido no lote 2 (642 instâncias de parafuso no dataset atual).
+- Métricas quase perfeitas em validação podem estar otimistas: o split do lote 1 era aleatório por imagem, então frames muito parecidos (mesma peça, mesma sessão) podiam cair em treino e validação ao mesmo tempo. O teste real é a webcam, em condições de uso.
+
+### Retreino `lean_lab_v2` (lote 1 + lote 2, 10 classes)
+
+Dataset `dataset_yolo_v2`: 1.122 imagens (888 treino / 234 validação), todas as 10 classes com exemplos de validação. Detalhes do dataset e do retreino (incluindo o diagnóstico de por que a primeira tentativa de treino morreu sem gerar resultado, e o comando corrigido) em `fase-2-plano.md`, seções 3.4 e 3.5. Resultado do treino: a preencher ali quando terminar.
 
 ## 4. Rodar o backend (API + banco de dados)
 
@@ -129,6 +176,8 @@ Corpo do `POST /eventos`:
 
 `parafusos_detectados` e `parafusos_esperados` são opcionais (não podem ser negativos): o `infer_webcam.py` da Fase 1 continua enviando eventos sem eles e a API aceita. Qualquer `status` diferente de `OK` conta como alerta nas estatísticas.
 
+> **Limitação atual:** o schema da API ainda não tem campos para as peças de encaixe (seção 6). O `infer_webcam_yolo.py` já detecta e decide o status considerando encaixe (`ALERTA_ENCAIXE_INCOMPLETO`), mas só envia à API os mesmos campos acima — a contagem de *quais* encaixes foram detectados vai só para o CSV de backup local, não para o banco.
+
 Este backend é independente do da Fase 1 (banco próprio) e usa a mesma porta 8000 por padrão — rode um de cada vez, ou troque a porta com `--port` e ajuste a URL nos demais componentes. Para usar outro banco (ex.: PostgreSQL), defina a variável de ambiente `DATABASE_URL`.
 
 ## 5. Rodar o dashboard
@@ -148,26 +197,38 @@ Abre em `http://localhost:8501`, já apontando para `http://localhost:8000` (dá
 ## 6. Inferência ao vivo
 
 ```bash
-python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v1/weights/best.pt --estacao camada_verde --parafusos_esperados 4 --api_url http://localhost:8000
+python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v2/weights/best.pt --estacao camada_amarela --api_url http://localhost:8000
 ```
 
-Pressione `q` para sair. Argumentos: `--camera` (índice da webcam, padrão 0), `--backup_file` (padrão `eventos_backup_yolo.csv`).
+Pressione `q` para sair. Argumentos: `--camera` (índice da webcam, padrão 0), `--backup_file` (padrão `eventos_backup_yolo.csv`), `--ignorar_classes` (ver abaixo).
 
 Como funciona:
 - `model.track` mantém um ID por peça entre frames; cada ID é contabilizado **uma vez** por sessão.
-- Para cada peça nova, conta os parafusos cujo centro está dentro da caixa da peça.
+- Para cada peça nova, conta parafusos e peças de encaixe cujo **centro** cai dentro da caixa da peça — um parafuso solto na mesa, fora da peça, não entra na contagem.
+- A receita de completude (quantos parafusos, quais peças de encaixe) é **por estação**, confirmada com a Renault (`fase-2-plano.md`, seção 4) e definida em `ESTACAO_RECEITA` no topo do script — não é mais um número fixo via flag:
+
+  | Estação (`--estacao`) | Parafusos | Peças de encaixe |
+  |---|---|---|
+  | `camada_base` | 0 | nenhuma |
+  | `camada_verde` | 4 | nenhuma |
+  | `camada_amarela` | 4 | as 4 (circular, retangular, hexágono, cápsula) |
+  | `camada_azul` | 4 | nenhuma |
+  | `camada_vermelha` | 4 | as 4 (mesmas da amarela) |
+
 - Status do evento:
-  - `OK` — camada correta e parafusos ≥ `--parafusos_esperados`;
+  - `OK` — camada correta, parafusos suficientes e (se a estação exigir) as 4 peças de encaixe presentes;
   - `ALERTA_CAMADA_INCORRETA` — camada detectada diferente da estação;
-  - `ALERTA_PARAFUSOS_INSUFICIENTES` — camada correta, mas faltam parafusos.
+  - `ALERTA_PARAFUSOS_INSUFICIENTES` — camada correta, mas faltam parafusos;
+  - `ALERTA_ENCAIXE_INCOMPLETO` — camada e parafusos OK, mas falta alguma peça de encaixe exigida.
+- `--ignorar_classes` desliga a detecção de uma ou mais classes em tempo de inferência (ex.: `--ignorar_classes encaixe_hexagono` se ela ainda não estiver confiável), sem precisar retreinar — usa o filtro `classes=` do Ultralytics, os pesos não mudam. Cuidado: se a classe ignorada for exigida pela receita da estação atual, o status fica sempre em alerta de incompleto para essa estação (o script avisa isso ao iniciar).
 - Confiança mínima: `CONFIDENCE_THRESHOLD = 0.5` (no topo do script).
 
-O evento é enviado para `POST /eventos` do backend desta pasta (seção 4), incluindo `parafusos_detectados` e `parafusos_esperados`. Se a API estiver inacessível, cai no CSV de backup local (`eventos_backup_yolo.csv`, que guarda só `parafusos_detectados`); esse CSV não é reenviado automaticamente.
+O evento é enviado para `POST /eventos` do backend desta pasta (seção 4), incluindo `parafusos_detectados` e `parafusos_esperados` (ver limitação sobre encaixe na seção 4). Se a API estiver inacessível, cai no CSV de backup local (`eventos_backup_yolo.csv`, que guarda parafusos **e** encaixes detectados); esse CSV não é reenviado automaticamente.
 
 Pendências que afetam o uso:
-- A contagem de parafusos é **preliminar** (2 exemplos de treino). É preciso uma sessão de captura dedicada e retreino antes de confiar nela.
-- `--parafusos_esperados` tem padrão 4, mas a quantidade real por estação ainda precisa ser confirmada com a Renault (`fase-2-plano.md`, seção 4).
+- Trate a contagem de parafuso/encaixe como **preliminar** até confirmar que o `--model` usado já é o retreinado com o lote 2 (ver seção 3) e validar ao vivo.
+- A completude é avaliada no primeiro frame em que o `track_id` aparece — se a peça ainda estiver sendo montada nesse instante, pode sair um alerta de incompleto falso (limitação conhecida, registrada em `fase-2-plano.md`, seção 6).
 
 ## Dados que não estão no repositório
 
-Por serem pesados e regeneráveis, ficam só na máquina local (ignorados no `.gitignore`): `cvat_exports/`, `raw_images/`, `dataset_yolo/images/`, `venv/`, `yolo11n.pt` e `last.pt`. Se precisar compartilhá-los ou fazer backup, considere Git LFS ou um drive — o repositório já passou de vários GB no histórico.
+Por serem pesados e regeneráveis, ficam só na máquina local (ignorados no `.gitignore`): `cvat_exports/`, `raw_images/`, `dataset_yolo*/images/`, `venv/`, pesos `*.pt` exceto o `best.pt` de cada treino em `runs_yolo/`, e `runs/` (saída de validação duplicada). Se precisar compartilhá-los ou fazer backup, considere Git LFS ou um drive — o repositório já passou de vários GB no histórico.

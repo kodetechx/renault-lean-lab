@@ -4,3 +4,14 @@ timestamp,estacao,classe_detectada,status,tempo_ciclo_s,parafusos_detectados
 2026-09-21T19:18:30.859964,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.26,0
 2026-09-21T19:18:35.390198,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.51,0
 2026-09-21T19:18:39.645092,camada_vermelha,camada_vermelha,ALERTA_PARAFUSOS_INSUFICIENTES,4.25,0
+2026-09-22T19:55:03.286731,camada_verde,camada_azul,ALERTA_CAMADA_INCORRETA,7.36,0
+2026-09-22T19:55:07.544165,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.27,0
+2026-09-22T19:55:11.767648,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.22,0
+2026-09-24T19:16:56.808098,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,12.60,0
+2026-09-24T19:17:12.358914,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,15.55,0
+2026-09-24T19:17:16.980574,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.63,0
+2026-10-03T21:39:48.101012,camada_verde,camada_azul,ALERTA_CAMADA_INCORRETA,12.21,0
+2026-10-03T21:39:52.386586,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.27,0
+2026-10-03T21:39:56.733207,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.35,0
+2026-10-03T21:40:01.109154,camada_verde,camada_vermelha,ALERTA_CAMADA_INCORRETA,4.36,0
+2026-10-03T21:40:07.142474,camada_verde,camada_azul,ALERTA_CAMADA_INCORRETA,6.06,0
