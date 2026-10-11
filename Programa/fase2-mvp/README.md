@@ -36,7 +36,8 @@ fase2-mvp/
 │   ├── labels/{train,val}/   # versionado (anotações)
 │   └── images/{train,val}/   # NÃO versionado (~6 GB, gerado pelo script)
 ├── runs_yolo/
-│   └── lean_lab_v1/           # 1º treino (lote 1, 6 classes) — só o best.pt fica versionado
+│   ├── lean_lab_v1/            # 1º treino (lote 1, 6 classes)
+│   └── lean_lab_v2/            # retreino (lote 1+2, 10 classes) — toda a pasta é versionada, exceto o last.pt
 ├── cvat_exports/             # NÃO versionado (~6 GB, zips do CVAT, lote 1 + lote 2)
 └── raw_images/               # NÃO versionado (~3,9 GB, fotos originais)
 ```
@@ -138,7 +139,16 @@ Curvas, matriz de confusão e amostras de validação estão em `runs_yolo/lean_
 
 ### Retreino `lean_lab_v2` (lote 1 + lote 2, 10 classes)
 
-Dataset `dataset_yolo_v2`: 1.122 imagens (888 treino / 234 validação), todas as 10 classes com exemplos de validação. Detalhes do dataset e do retreino (incluindo o diagnóstico de por que a primeira tentativa de treino morreu sem gerar resultado, e o comando corrigido) em `fase-2-plano.md`, seções 3.4 e 3.5. Resultado do treino: a preencher ali quando terminar.
+Dataset `dataset_yolo_v2`: 1.122 imagens (888 treino / 234 validação), todas as 10 classes com exemplos de validação. 60 épocas, GPU, `--imgsz 960 --batch -1 --workers 4`, ~85 minutos.
+
+| Métrica geral | Valor |
+|---|---|
+| Precisão | 0,946 |
+| Recall | 0,907 |
+| mAP50 | 0,962 |
+| mAP50-95 | 0,858 |
+
+mAP50-95 por classe: camadas entre 0,94-0,98 (consistente com o treino anterior); `parafuso` 0,689 (642 instâncias no dataset, primeira medida real — no treino anterior não tinha nenhum exemplo de validação); encaixes entre 0,69-0,86, com `encaixe_hexagono` e `encaixe_capsula` mais fracos (classes com menos exemplos de treino). Detalhe completo, por classe com contagem de validação, e leitura dos resultados em `fase-2-plano.md`, seção 3.4. Diagnóstico de por que a primeira tentativa de treino morreu sem gerar resultado, e a correção aplicada, na seção 3.5.
 
 ## 4. Rodar o backend (API + banco de dados)
 

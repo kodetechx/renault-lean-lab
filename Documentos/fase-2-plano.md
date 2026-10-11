@@ -1,7 +1,7 @@
 # Fase 2 — Detecção da Peça Completa e Contagem de Parafusos via YOLO
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** 🟡 Dataset unificado (lote 1 + lote 2, 10 classes) gerado em 11/10/2026; a primeira tentativa de retreino (`lean_lab_v2`) **morreu silenciosamente**, rodando na CPU sem que ninguém tivesse pedido isso (causa e correção na seção 3.5) — ambiente de treino corrigido (GPU habilitada) e comando ajustado; falta rodar o retreino de verdade, depois conferir o mAP por classe e validar parafuso/encaixe ao vivo
+**Status:** 🟢 Retreino `lean_lab_v2` concluído em 11/10/2026 (60 épocas, GPU, ~85min) com as 10 classes — mAP50-95 geral 0,858, todas as classes agora com exemplos reais de validação (seção 3.4); falta validar parafuso/encaixe ao vivo com esse modelo
 **Depende de:** `fase-1-plano.md` (MVP de classificação de camada, concluído) e `fase-0-validacao-e-escopo.md`
 **Prioridade escolhida pelo grupo (set/2026):** detecção de objeto (YOLO) como substituto do MobileNetV2 para a verificação da camada + contagem de parafusos, entre as 4 frentes possíveis da Fase 2 (as outras — QR/RFID, replicação multi-estação — ficam para depois, ver seção 7; detecção de avaria foi removida do escopo do projeto, ver seção 7).
 
@@ -78,7 +78,7 @@ Todas as 1.783 imagens de camada anotadas no CVAT no lote 1 contêm apenas 1 pe�
 
 Mitigação, se necessário no futuro: ajuste de `CONFIDENCE_THRESHOLD`/IoU do NMS como paliativo.
 
-### 3.4 Retreino v2 com lote 1 + lote 2 (11/10/2026) — dataset pronto, treino refeito após correção de ambiente (seção 3.5)
+### 3.4 Retreino v2 com lote 1 + lote 2 (11/10/2026) — concluído, após correção de ambiente (seção 3.5)
 
 **Dataset unificado** gerado por `build_yolo_dataset.py` (pasta `dataset_yolo_v2`), a partir de 8 zips:
 
@@ -112,7 +112,23 @@ Formas no lote 2: **911 elipses e 192 polígonos** (1.103 formas) convertidas em
 2. **Caixa envolvente de polígono/elipse.** Como o YOLO de detecção só usa caixas, cada forma virou a caixa que a envolve (seção 5.2). Em objetos inclinados ou alongados (ex.: cápsula girada) a caixa inclui folga nos cantos. A regra de contagem usa o centro da caixa, então o impacto é pequeno, mas peças muito próximas podem ter caixas sobrepostas. Conferir visualmente uma amostra e as previsões de validação do treino.
 3. **Métricas só valem com exemplos de validação.** Todas as 10 classes têm 28 ou mais instâncias na validação, então o mAP por classe agora é interpretável (ao contrário de `parafuso` no primeiro treino, seção 3.1).
 
-**Resultado do treino:** _a preencher quando o treino terminar (mAP50/mAP50-95 geral e por classe, tempo de treino)._
+**Resultado do treino (concluído em 11/10/2026):** fine-tuning a partir do `best.pt` do lote 1, GPU (RTX 2050, ver seção 3.5), `--imgsz 960 --batch -1 (AutoBatch escolheu 2) --workers 4`, 60 épocas, **~85 minutos** (5077s).
+
+| Classe | mAP50-95 | Exemplos na validação |
+|---|---|---|
+| **Geral (todas as classes)** | **0,858** (mAP50 geral: 0,962; precisão 0,946; recall 0,907) | 504 instâncias / 234 imagens |
+| camada_base | 0,975 | 43 |
+| camada_verde | 0,980 | 46 |
+| camada_amarela | 0,967 | 49 |
+| camada_azul | 0,940 | 57 |
+| camada_vermelha | 0,954 | 53 |
+| parafuso | 0,689 | 130 |
+| encaixe_circular | 0,856 | 30 |
+| encaixe_retangular | 0,812 | 38 |
+| encaixe_hexagono | 0,717 | 28 |
+| encaixe_capsula | 0,690 | 30 |
+
+**Leitura:** diferente do primeiro treino (seção 3.1), agora **todas as 10 classes têm exemplos reais de validação** — o mAP de `parafuso` deixou de ser o valor geral repetido (era o caso degenerado da seção 3.1) e passou a ser uma medida de verdade: 0,689, mais baixo que as camadas, mas nada perto de zero — já é detecção real, não ruído. As camadas continuam excelentes (0,94-0,98). Os encaixes ficaram entre 0,69 e 0,86; `encaixe_hexagono` e `encaixe_capsula` são os mais fracos, consistentes com terem o menor número de instâncias de treino (seção 3.4, tabela de instâncias). Isso é esperado para um dataset ainda pequeno dessas classes (81-90 no treino) e não invalida o resultado — é o próximo ponto a reforçar se, no teste ao vivo (seção 8), a detecção desses dois encaixes vier fraca.
 
 ### 3.5 Diagnóstico: a primeira tentativa de retreino morreu na CPU, sem erro visível (11/10/2026)
 
@@ -275,7 +291,7 @@ Na prática, isso permitiria, por exemplo, rastrear o histórico completo de uma
 - [x] Ajustar `build_yolo_dataset.py` e `train_yolo.py` para o lote 2 (11/10/2026): leitura de XML (polígono/elipse → caixa), fotos de dentro dos zips, duplicatas entre lotes por conteúdo, split estratificado, relatório por classe, caminho de saída absoluto.
 - [x] **Rodar `build_yolo_dataset.py` com lote 1 + lote 2** — 1.122 imagens (888/234), 10 classes com exemplos nos dois conjuntos (seção 3.4).
 - [x] Diagnosticar por que a primeira tentativa de retreino morreu sem erro (treino caiu na CPU por `torch` CPU-only) e corrigir o ambiente: `torch`/`torchvision` com CUDA instalados, `train_yolo.py` com `--device`/`--workers`, batch real medido via AutoBatch (seção 3.5).
-- [ ] **Retreinar de fato** (fine-tuning a partir do `best.pt` do lote 1, `--imgsz 960 --batch -1 --workers 4 --epochs 60`, agora na GPU) e conferir o mAP **por classe com a contagem de exemplos de validação ao lado**; registrar o resultado na seção 3.4.
+- [x] **Retreinar de fato** (fine-tuning a partir do `best.pt` do lote 1, `--imgsz 960 --batch -1 --workers 4 --epochs 60`, na GPU, ~85min) e conferir o mAP **por classe com a contagem de exemplos de validação ao lado**; resultado registrado na seção 3.4 — mAP50-95 geral 0,858, todas as classes com validação real.
 - [ ] (Recomendado) Conferir visualmente uma amostra das caixas geradas a partir de polígono/elipse e as previsões de validação do treino.
 - [ ] Testar o novo `best.pt` ao vivo no `infer_webcam_yolo.py` nas camadas verde (4 parafusos) e amarela/vermelha (4 parafusos + 4 encaixes), com parafuso solto na mesa fora da peça; comparar v1 x v2.
 - [ ] Anotar parafusos/encaixes nas fotos de camada do lote 1 e/ou o restante das 1.783 imagens de camada, se a detecção de parafuso/encaixe sobre a peça vier fraca (opcional).
