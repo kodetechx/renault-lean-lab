@@ -35,7 +35,7 @@ confiavel ate esse retreino ser validado (ver fase-2-plano.md, secao 3.1).
 
 Uso:
     python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v2/weights/best.pt \
-        --estacao camada_amarela --api_url http://localhost:8000
+        --estacao camada_amarela --api_url http://127.0.0.1:8000
 
     # Desativando a deteccao de encaixe (ex.: se ela nao estiver confiavel
     # ainda, mas sem querer perder a deteccao de camada/parafuso):
@@ -74,17 +74,58 @@ ESTACAO_RECEITA = {
 }
 
 
-def log_event(api_url, csv_backup_path, estacao, classe_detectada, status, ciclo_segundos, parafusos_detectados, encaixes_detectados):
+CSV_BACKUP_HEADER = [
+    "timestamp", "estacao", "classe_detectada", "status", "tempo_ciclo_s",
+    "parafusos_detectados", "parafusos_esperados",
+    "encaixes_detectados", "encaixes_esperados", "modelo_versao",
+]
+
+
+def _preparar_csv_backup(csv_backup_path: Path):
+    """
+    Garante que o CSV de backup tem o cabecalho atual. Se o arquivo ja existe
+    com um cabecalho de uma versao anterior do script (menos colunas) -- ou
+    esta vazio (0 bytes, ex.: uma execucao anterior travou logo apos criar o
+    arquivo e antes de escrever o cabecalho) --, ele e renomeado para .bak em
+    vez de ter linhas novas anexadas por baixo de um cabecalho que nao bate
+    (ou sem cabecalho nenhum). Isso ja aconteceu uma vez neste projeto (CSV
+    com linhas de 6 e 7 campos sob um cabeçalho de 6, quando
+    encaixes_detectados foi adicionado sem atualizar o cabecalho).
+    """
+    if not csv_backup_path.exists():
+        return
+    with open(csv_backup_path, "r", newline="", encoding="utf-8") as f:
+        cabecalho_atual = next(csv.reader(f), None)
+    if cabecalho_atual != CSV_BACKUP_HEADER:
+        destino = csv_backup_path.with_suffix(csv_backup_path.suffix + ".bak")
+        print(
+            f"[AVISO] {csv_backup_path} tem um formato antigo (colunas diferentes). "
+            f"Renomeando para {destino} e comecando um arquivo novo."
+        )
+        csv_backup_path.replace(destino)
+
+
+def log_event(
+    api_url, csv_backup_path, estacao, classe_detectada, status, ciclo_segundos,
+    parafusos_detectados, parafusos_esperados, encaixes_detectados, encaixes_esperados, modelo_versao,
+):
     """
     Envia o evento para a API do backend. Se a API estiver inacessivel
     (ex.: instabilidade do hotspot), o evento cai em um CSV de backup local.
     Mesmo padrao usado no infer_webcam.py da Fase 1.
     """
+    encaixes_detectados_str = ",".join(sorted(encaixes_detectados)) if encaixes_detectados else ""
+    encaixes_esperados_str = ",".join(sorted(encaixes_esperados)) if encaixes_esperados else ""
     payload = {
         "estacao": estacao,
         "classe_detectada": classe_detectada,
         "status": status,
         "tempo_ciclo_s": ciclo_segundos,
+        "parafusos_detectados": parafusos_detectados,
+        "parafusos_esperados": parafusos_esperados,
+        "encaixes_detectados": encaixes_detectados_str,
+        "encaixes_esperados": encaixes_esperados_str,
+        "modelo_versao": modelo_versao,
     }
     try:
         resp = requests.post(f"{api_url}/eventos", json=payload, timeout=2)
@@ -97,12 +138,7 @@ def log_event(api_url, csv_backup_path, estacao, classe_detectada, status, ciclo
     with open(csv_backup_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if novo_arquivo:
-            writer.writerow(
-                [
-                    "timestamp", "estacao", "classe_detectada", "status", "tempo_ciclo_s",
-                    "parafusos_detectados", "encaixes_detectados",
-                ]
-            )
+            writer.writerow(CSV_BACKUP_HEADER)
         writer.writerow(
             [
                 datetime.now().isoformat(),
@@ -111,7 +147,10 @@ def log_event(api_url, csv_backup_path, estacao, classe_detectada, status, ciclo
                 status,
                 f"{ciclo_segundos:.2f}",
                 parafusos_detectados,
-                ",".join(sorted(encaixes_detectados)) if encaixes_detectados else "",
+                parafusos_esperados,
+                encaixes_detectados_str,
+                encaixes_esperados_str,
+                modelo_versao,
             ]
         )
 
@@ -172,14 +211,46 @@ def main():
         ),
     )
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--api_url", default="http://localhost:8000")
+    parser.add_argument(
+        "--cam_width", type=int, default=1280,
+        help="Resolucao pedida a webcam. Sem isso, a maioria das webcams usa 640x480 por padrao "
+             "(0.3MP) -- muito abaixo da resolucao das fotos de treino (fotos de celular, ~12MP), "
+             "o que faz pecas pequenas (parafuso, encaixe) ficarem praticamente invisiveis. A camera "
+             "pode nao suportar exatamente o valor pedido; o OpenCV usa o mais proximo disponivel.",
+    )
+    parser.add_argument("--cam_height", type=int, default=720)
+    parser.add_argument(
+        "--api_url", default="http://127.0.0.1:8000",
+        help=(
+            "URL base do backend. Padrao 127.0.0.1 em vez de 'localhost': em alguns Windows, 'localhost' "
+            "resolve para ::1 (IPv6) primeiro, e como o backend so escuta IPv4, cada requisicao perde ~2s "
+            "tentando IPv6 antes de cair para IPv4 -- as vezes estoura o timeout e o evento vai pro CSV de "
+            "backup mesmo com a API no ar. Use 127.0.0.1 (ou o IP da maquina do backend) para evitar isso."
+        ),
+    )
     parser.add_argument("--backup_file", default="eventos_backup_yolo.csv")
+    parser.add_argument(
+        "--modelo_versao",
+        default=None,
+        help=(
+            "Identifica no evento qual treino gerou o modelo (ex.: 'lean_lab_v2'), para o dashboard poder "
+            "separar estatisticas por versao sem misturar com eventos de um modelo antigo. Por padrao, "
+            "deduzido do caminho de --model (o nome da pasta do experimento, ex.: runs_yolo/lean_lab_v2/"
+            "weights/best.pt -> 'lean_lab_v2'); informe manualmente se o caminho nao seguir esse padrao."
+        ),
+    )
     args = parser.parse_args()
 
     if args.estacao not in ESTACAO_RECEITA:
         raise SystemExit(f"'{args.estacao}' nao e uma classe de camada conhecida. Opcoes: {sorted(ESTACAO_RECEITA)}")
 
     receita = ESTACAO_RECEITA[args.estacao]
+
+    modelo_versao = args.modelo_versao
+    if modelo_versao is None:
+        # .../runs_yolo/<nome_do_experimento>/weights/best.pt -> <nome_do_experimento>
+        caminho_model = Path(args.model).resolve()
+        modelo_versao = caminho_model.parent.parent.name if caminho_model.parent.name == "weights" else caminho_model.stem
 
     model = YOLO(args.model)
     class_names = model.names  # dict {indice: nome}
@@ -199,12 +270,18 @@ def main():
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
         raise SystemExit("Nao foi possivel abrir a webcam. Verifique o indice em --camera.")
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.cam_width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.cam_height)
+    resolucao_obtida = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    print(f"[CONFIG] Resolucao da webcam: pedido {args.cam_width}x{args.cam_height}, obtido {resolucao_obtida[0]}x{resolucao_obtida[1]}")
 
     csv_path = Path(args.backup_file)
+    _preparar_csv_backup(csv_path)
     contadas_ids = set()  # track IDs de peca ja contabilizados nesta sessao
     ciclo_inicio = time.time()
 
     print("Pressione 'q' para sair.")
+    print(f"[CONFIG] Versao do modelo (enviada em cada evento): {modelo_versao}")
     print(f"[CONFIG] Estacao: {args.estacao} | Receita: {receita['parafusos']} parafuso(s)"
           + (f" + encaixe {sorted(receita['encaixe'])}" if receita["encaixe"] else ""))
     print(
@@ -283,7 +360,9 @@ def main():
 
             log_event(
                 args.api_url, csv_path, args.estacao, class_name, status, tempo_ciclo,
-                parafusos_na_peca, encaixes_na_peca,
+                parafusos_na_peca, receita_estacao["parafusos"],
+                encaixes_na_peca, receita_estacao["encaixe"],
+                modelo_versao,
             )
             print(
                 f"[EVENTO] track_id={track_id} classe={class_name} "

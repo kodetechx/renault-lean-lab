@@ -1,7 +1,7 @@
 # Fase 2 — Detecção da Peça Completa e Contagem de Parafusos via YOLO
 ## Projeto: Digitalização do Lab de Lean Manufacturing — Renault x UniSenai
 
-**Status:** 🟢 Retreino `lean_lab_v2` concluído em 11/10/2026 (60 épocas, GPU, ~85min) com as 10 classes — mAP50-95 geral 0,858, todas as classes agora com exemplos reais de validação (seção 3.4); falta validar parafuso/encaixe ao vivo com esse modelo
+**Status:** 🟡 Retreino `lean_lab_v2` concluído em 11/10/2026 (60 épocas, GPU, ~85min) com as 10 classes — mAP50-95 geral 0,858 na validação (seção 3.4); no teste ao vivo, porém, parafuso/encaixe não apareciam demarcados — causa encontrada (webcam capturando em 640×480, muito abaixo da resolução das fotos de treino) e corrigida (seção 3.6); falta confirmar ao vivo se a correção foi suficiente
 **Depende de:** `fase-1-plano.md` (MVP de classificação de camada, concluído) e `fase-0-validacao-e-escopo.md`
 **Prioridade escolhida pelo grupo (set/2026):** detecção de objeto (YOLO) como substituto do MobileNetV2 para a verificação da camada + contagem de parafusos, entre as 4 frentes possíveis da Fase 2 (as outras — QR/RFID, replicação multi-estação — ficam para depois, ver seção 7; detecção de avaria foi removida do escopo do projeto, ver seção 7).
 
@@ -162,6 +162,18 @@ Não é necessário passar `--device`: com o `torch` corrigido, o padrão (`''`)
 
 **Ação se isso se repetir em outra máquina:** antes de treinar, confirmar com `python -c "import torch; print(torch.cuda.is_available())"`. Se vier `False` com uma GPU NVIDIA disponível, o pacote `torch` precisa ser reinstalado a partir do índice da PyTorch com a tag `cuXXX` compatível com a versão de CUDA do driver (visível em `nvidia-smi`), não do PyPI direto.
 
+### 3.6 Diagnóstico: ao vivo, a webcam escondia parafuso e encaixe por falta de resolução (11/10/2026)
+
+Primeiro teste ao vivo do `lean_lab_v2`: a camada é detectada normalmente, mas as peças de encaixe dentro dela **não aparecem demarcadas**, mesmo com a peça completa e visível.
+
+**Causa:** as fotos de treino são de celular, em alta resolução (~4096×3072, 12 megapixels). A webcam usada no `infer_webcam_yolo.py` nunca teve a resolução de captura configurada — o script só fazia `cv2.VideoCapture(args.camera)` e lia os frames na resolução padrão que o driver da câmera entrega, que **por padrão, na prática, saiu em 640×480 (0,3 megapixel)**. Confirmado com um teste direto no notebook usado: pedindo explicitamente 1280×720 ao OpenCV, a mesma câmera entrega — ou seja, o padrão estava usando menos de um terço da resolução que a câmera já suporta.
+
+Isso explica o padrão observado: a camada (objeto grande, cor uniforme) continua visível mesmo em baixa resolução, mas parafuso e as peças de encaixe (pequenos, precisam de detalhe de forma para distinguir círculo/retângulo/hexágono/cápsula) ficam com poucos pixels reais — nenhum valor de `--imgsz` no treino ou na inferência recupera detalhe que a câmera nunca capturou; aumentar `imgsz` só amplia os pixels que já existem (upscaling), não cria detalhe novo. Isso também explica por que os números da seção 3.4 (validação) parecem bons mesmo para `encaixe_circular`/`encaixe_retangular`: aquela validação usa as fotos de treino (alta resolução), não a webcam.
+
+**Correção aplicada:** `infer_webcam_yolo.py` passou a configurar explicitamente a resolução da webcam ao abrir a câmera (`--cam_width`/`--cam_height`, padrão 1280×720 — o máximo que a câmera testada suportou; o OpenCV usa o mais próximo disponível se a câmera não suportar exatamente esse valor). O script agora imprime a resolução pedida e a obtida ao iniciar, para conferir rapidamente se a mudança teve efeito.
+
+**Ainda assim, 1280×720 é ~16x menos pixels que as fotos de treino.** Se a detecção de parafuso/encaixe continuar fraca mesmo depois dessa correção, o próximo passo é testar com a peça mais perto da câmera (o objeto pequeno ocupando mais pixels do frame, independente da resolução total) e, se o notebook tiver uma webcam melhor ou for possível usar a câmera do celular como webcam, usar essa em vez da webcam embutida.
+
 ---
 
 ## 4. Passo 0: alinhamento com a Renault — respondido em 20/09/2026
@@ -244,7 +256,8 @@ Três zips exportados do CVAT (`lote2-multiplas-pecas-1.zip`, `-2.zip`, `-3.zip`
 | Parafuso/encaixe só contam dentro da peça | Contenção geométrica: o centro da caixa do parafuso/encaixe precisa cair dentro da caixa da peça (`box_center_inside`) | Evita contar um parafuso solto na mesa como parte da montagem |
 | Desligar uma classe sem retreinar | `--ignorar_classes` no `infer_webcam_yolo.py`, que usa o filtro `classes=` do Ultralytics (os pesos não mudam, só a saída é filtrada) | Permite esconder uma classe pouco confiável sem voltar a uma versão anterior do modelo |
 | `infer_webcam_yolo.py` | **Atualizado em 04/10/2026**: receita de completude por estação (tabela da seção 4), checagem das 4 formas de encaixe pelo nome (não só contagem), contenção geométrica para parafuso e encaixe | Implementa a regra de negócio da seção 4 |
-| Backend/dashboard | Sem mudança estrutural — a API já recebe eventos genéricos; muda o conteúdo do evento (incluir contagem de parafusos e de peças de encaixe detectadas). Observação: hoje o `log_event` só envia ao backend os campos já existentes; parafusos/encaixes detectados vão apenas para o CSV de backup | Reforça que a separação em camadas da Fase 1.2 já isola essa migração |
+| Backend/dashboard | Schema do evento ampliado (`encaixes_detectados`/`encaixes_esperados`/`modelo_versao`), sem quebrar eventos antigos (campos novos opcionais; banco SQLite já existente ganha as colunas sozinho ao iniciar o backend — ver `ensure_sqlite_columns` em `backend/database.py`) (12/10/2026) | Reforça que a separação em camadas da Fase 1.2 já isola essa migração — nenhuma mudança na estrutura da API, só no conteúdo do evento |
+| Dashboard (Fase 2) | Filtros (versão do modelo, estação, status), aviso de estação sem evento recente, gráfico de tendência ao longo do tempo, exportação em CSV, horário convertido para fuso local (12/10/2026) | Indicadores por estação já existiam; essas melhorias respondem a limitações observadas no uso: não dava pra comparar v1×v2, nem ver tendência ao longo de um turno, nem notar uma estação parada sem abrir a tabela |
 | Saída do treino | `train_yolo.py` grava em caminho **absoluto** e imprime o caminho real do `best.pt` | No primeiro treino o Ultralytics gravou em `runs/detect/runs_yolo/...` (pasta das settings dele) e o caminho impresso estava errado |
 | Ambiente de treino (GPU) | `torch`/`torchvision` reinstalados com build CUDA (`cu129`, compatível com o driver da RTX 2050) na venv da Fase 2; `train_yolo.py` passou a expor `--device` e `--workers` (padrão de `--workers` reduzido de 8 para 4) | O pacote `torch` do PyPI vem CPU-only por padrão — sem reinstalar com o índice certo, o treino nunca usa a GPU, mesmo com uma disponível (ver seção 3.5) |
 | Tamanho de batch em GPU com pouca VRAM | `--batch -1` (AutoBatch do Ultralytics), em vez de um número fixo | Medido na prática: só 2 cabe em 960px nos 4GB da RTX 2050 a 60% de uso; um número fixo maior arriscava ultrapassar a VRAM (seção 3.5) |
@@ -293,7 +306,8 @@ Na prática, isso permitiria, por exemplo, rastrear o histórico completo de uma
 - [x] Diagnosticar por que a primeira tentativa de retreino morreu sem erro (treino caiu na CPU por `torch` CPU-only) e corrigir o ambiente: `torch`/`torchvision` com CUDA instalados, `train_yolo.py` com `--device`/`--workers`, batch real medido via AutoBatch (seção 3.5).
 - [x] **Retreinar de fato** (fine-tuning a partir do `best.pt` do lote 1, `--imgsz 960 --batch -1 --workers 4 --epochs 60`, na GPU, ~85min) e conferir o mAP **por classe com a contagem de exemplos de validação ao lado**; resultado registrado na seção 3.4 — mAP50-95 geral 0,858, todas as classes com validação real.
 - [ ] (Recomendado) Conferir visualmente uma amostra das caixas geradas a partir de polígono/elipse e as previsões de validação do treino.
-- [ ] Testar o novo `best.pt` ao vivo no `infer_webcam_yolo.py` nas camadas verde (4 parafusos) e amarela/vermelha (4 parafusos + 4 encaixes), com parafuso solto na mesa fora da peça; comparar v1 x v2.
+- [x] Testar o novo `best.pt` ao vivo no `infer_webcam_yolo.py` — camada detectada normalmente, mas parafuso/encaixe não apareciam demarcados. Diagnosticado: webcam capturando em 640×480 por padrão (seção 3.6). Corrigido (`--cam_width`/`--cam_height`, padrão 1280×720).
+- [ ] Repetir o teste ao vivo com a correção de resolução, nas camadas verde (4 parafusos) e amarela/vermelha (4 parafusos + 4 encaixes), com parafuso solto na mesa fora da peça; comparar v1 x v2.
 - [ ] Anotar parafusos/encaixes nas fotos de camada do lote 1 e/ou o restante das 1.783 imagens de camada, se a detecção de parafuso/encaixe sobre a peça vier fraca (opcional).
 
 ---

@@ -25,6 +25,8 @@ Ordem fixa (vira o ID usado no treino), definida em `MASTER_CLASSES` no `build_y
 
 ```
 fase2-mvp/
+├── iniciar.ps1                # sobe backend + dashboard + câmera de uma vez (seção 4)
+├── parar.ps1                  # encerra backend + dashboard
 ├── build_yolo_dataset.py     # junta os exports do CVAT (lote 1 + lote 2 + futuros) em um dataset único
 ├── train_yolo.py             # treina e avalia o modelo
 ├── infer_webcam_yolo.py      # inferência ao vivo pela webcam
@@ -150,7 +152,35 @@ Dataset `dataset_yolo_v2`: 1.122 imagens (888 treino / 234 validação), todas a
 
 mAP50-95 por classe: camadas entre 0,94-0,98 (consistente com o treino anterior); `parafuso` 0,689 (642 instâncias no dataset, primeira medida real — no treino anterior não tinha nenhum exemplo de validação); encaixes entre 0,69-0,86, com `encaixe_hexagono` e `encaixe_capsula` mais fracos (classes com menos exemplos de treino). Detalhe completo, por classe com contagem de validação, e leitura dos resultados em `fase-2-plano.md`, seção 3.4. Diagnóstico de por que a primeira tentativa de treino morreu sem gerar resultado, e a correção aplicada, na seção 3.5.
 
-## 4. Rodar o backend (API + banco de dados)
+## 4. Rodar tudo de uma vez (`iniciar.ps1`)
+
+Depois de instalado (seção 1) e com um modelo treinado (seção 3), o dia a dia — subir backend, dashboard e a câmera juntos — pode ser feito com um comando:
+
+```powershell
+.\iniciar.ps1 -Estacao camada_verde
+```
+
+Abre o backend e o dashboard cada um na sua própria janela, espera a API responder antes de continuar, e roda a câmera nesta janela (pressione `q` para sair dela). Sem `-Model`, usa automaticamente o `best.pt` mais recente em `runs_yolo\*\weights\`.
+
+```powershell
+.\iniciar.ps1 -Estacao camada_amarela -IgnorarClasses "encaixe_hexagono,encaixe_capsula"   # repassa --ignorar_classes
+.\iniciar.ps1 -PularCamera                                                                  # só backend + dashboard
+.\iniciar.ps1 -Estacao camada_azul -PularBackend                                             # backend já estava rodando em outra janela
+```
+
+Backend e dashboard continuam rodando nas janelas deles mesmo depois que a câmera for fechada. Para derrubar os dois:
+
+```powershell
+.\parar.ps1
+```
+
+`parar.ps1` encontra e encerra o que estiver nas portas 8000 (backend) e 8501 (dashboard) — incluindo os processos filhos do `uvicorn --reload` (no Windows ele sobe um supervisor + um worker; matar só um dos dois faz o backend "voltar sozinho"). A janela da câmera não é tocada por ele; feche-a com `q`.
+
+**Isto é só um atalho** — empacota exatamente os comandos das seções 5, 6 e 7 abaixo, nada mais. Para depurar uma parte isolada (ex.: testar só o backend com `curl`, sem dashboard nem câmera), continue usando os comandos manuais dessas seções.
+
+Os dois scripts usam o venv único desta pasta (`venv\Scripts\python.exe`, o mesmo das seções 1-3). Se você optou por venvs separados em `backend\` e `dashboard\` (como as seções 5 e 6 também documentam), use `-PythonBackend`/`-PythonDashboard` para apontar para eles — veja `Get-Help .\iniciar.ps1 -Full` para todos os parâmetros.
+
+## 5. Rodar o backend (API + banco de dados)
 
 Em um terminal separado, a partir da pasta `backend/` (o `eventos.db` é criado ali, na primeira execução):
 
@@ -168,29 +198,35 @@ Documentação interativa (Swagger): `http://localhost:8000/docs`.
 |----------|-----------|
 | `GET /health` | verifica se a API está no ar |
 | `POST /eventos` | registra um evento (uma peça nova detectada) |
-| `GET /eventos` | lista eventos; filtros `estacao`, `status` e `limit` (padrão 200, máx. 5000) |
-| `GET /estatisticas` | agregado por estação: peças, OK, alertas por tipo, taxa de alerta, tempo médio de ciclo e média de parafusos detectados |
+| `GET /eventos` | lista eventos; filtros `estacao`, `status`, `modelo_versao` e `limit` (padrão 200, máx. 5000) |
+| `GET /estatisticas` | agregado por estação: peças, OK, alertas por tipo (camada incorreta, parafusos insuficientes, encaixe incompleto), taxa de alerta, tempo médio de ciclo, média de parafusos detectados e horário do último evento; filtro opcional `modelo_versao` |
+| `GET /versoes-modelo` | lista os valores distintos de `modelo_versao` já recebidos (usado para popular o filtro do dashboard) |
 
 Corpo do `POST /eventos`:
 
 ```json
 {
-  "estacao": "camada_verde",
-  "classe_detectada": "camada_verde",
-  "status": "ALERTA_PARAFUSOS_INSUFICIENTES",
+  "estacao": "camada_amarela",
+  "classe_detectada": "camada_amarela",
+  "status": "ALERTA_ENCAIXE_INCOMPLETO",
   "tempo_ciclo_s": 6.0,
-  "parafusos_detectados": 1,
-  "parafusos_esperados": 4
+  "parafusos_detectados": 4,
+  "parafusos_esperados": 4,
+  "encaixes_detectados": "encaixe_circular,encaixe_retangular",
+  "encaixes_esperados": "encaixe_circular,encaixe_retangular,encaixe_hexagono,encaixe_capsula",
+  "modelo_versao": "lean_lab_v2"
 }
 ```
 
-`parafusos_detectados` e `parafusos_esperados` são opcionais (não podem ser negativos): o `infer_webcam.py` da Fase 1 continua enviando eventos sem eles e a API aceita. Qualquer `status` diferente de `OK` conta como alerta nas estatísticas.
+Todos os campos a partir de `parafusos_detectados` são opcionais (os dois `parafusos_*` não podem ser negativos): o `infer_webcam.py` da Fase 1 continua enviando eventos sem eles e a API aceita. `encaixes_detectados`/`encaixes_esperados` são uma string com os nomes separados por vírgula (`""` se a estação não exige nenhum). Qualquer `status` diferente de `OK` conta como alerta nas estatísticas, incluindo `ALERTA_ENCAIXE_INCOMPLETO`.
 
-> **Limitação atual:** o schema da API ainda não tem campos para as peças de encaixe (seção 6). O `infer_webcam_yolo.py` já detecta e decide o status considerando encaixe (`ALERTA_ENCAIXE_INCOMPLETO`), mas só envia à API os mesmos campos acima — a contagem de *quais* encaixes foram detectados vai só para o CSV de backup local, não para o banco.
+`modelo_versao` identifica qual treino gerou o modelo usado (ex.: `lean_lab_v2`) — o `infer_webcam_yolo.py` deduz isso automaticamente do caminho de `--model`. Serve para o dashboard não misturar nas mesmas estatísticas eventos de versões de modelo diferentes (ex.: comparar v1 e v2 lado a lado em vez de uma média sem sentido entre os dois).
+
+> Se o `backend/eventos.db` já existir de uma versão anterior deste `models.py` (sem essas colunas), o backend adiciona as colunas que faltarem sozinho ao iniciar (`ensure_sqlite_columns` em `database.py`), sem apagar os eventos já gravados. Isso só vale para SQLite; um banco real (Postgres) precisaria de uma ferramenta de migração própria (ex.: Alembic).
 
 Este backend é independente do da Fase 1 (banco próprio) e usa a mesma porta 8000 por padrão — rode um de cada vez, ou troque a porta com `--port` e ajuste a URL nos demais componentes. Para usar outro banco (ex.: PostgreSQL), defina a variável de ambiente `DATABASE_URL`.
 
-## 5. Rodar o dashboard
+## 6. Rodar o dashboard
 
 Em outro terminal, com o backend já no ar:
 
@@ -202,15 +238,29 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Abre em `http://localhost:8501`, já apontando para `http://localhost:8000` (dá para trocar a "URL da API" na barra lateral). Mostra: peças processadas, alertas, taxa de alerta e tempo médio de ciclo (gerais e por estação), gráfico de alertas por tipo (camada incorreta × parafusos insuficientes) e a lista dos últimos eventos com parafusos detectados × esperados. Atualiza sozinho a cada 10 s (desmarque na barra lateral para congelar a tela). Um aviso fixo lembra que a contagem de parafusos ainda é preliminar.
+Abre em `http://localhost:8501`, já apontando para `http://localhost:8000` (dá para trocar a "URL da API" na barra lateral). Atualiza sozinho a cada 10 s (desmarque na barra lateral para congelar a tela).
 
-## 6. Inferência ao vivo
+**Filtros (barra lateral):** versão do modelo (afeta o dashboard inteiro — cartões, tabela por estação e gráficos), e estação/status/nº de eventos a carregar (afetam a tabela de eventos e o gráfico de tendência).
+
+**O que mostra:**
+- Cartões gerais: peças processadas, alertas, taxa de alerta e tempo médio de ciclo.
+- **Aviso de estação parada:** compara o horário do último evento de cada estação conhecida (`camada_base/verde/amarela/azul/vermelha`) com "agora"; sinaliza quem está sem evento há mais que o limite configurado na barra lateral (padrão 15 min) e quem nunca recebeu nenhum evento — útil para notar câmera travada ou estação ociosa sem precisar ficar olhando a tabela.
+- Tabela por estação: peças, OK, alertas por tipo (camada incorreta, parafusos insuficientes, encaixe incompleto), taxa de alerta, tempo médio de ciclo, média de parafusos detectados e horário do último evento (convertido para horário de Brasília).
+- Dois gráficos de barra: peças por estação, e alertas por tipo e estação (as três categorias).
+- **Tendência de eventos ao longo do tempo:** gráfico de barras empilhadas por status, agrupado no intervalo escolhido (1min/5min/15min/1h) — mostra se a taxa de alerta piora ao longo de uma sessão/turno, não só o total acumulado.
+- Tabela dos últimos eventos (respeitando os filtros), com parafusos e encaixes detectados × esperados, e botão para baixar essa tabela em CSV.
+
+Um aviso fixo lembra que a contagem de parafuso/encaixe depende do retreino e das condições de captura (ver seção 7).
+
+## 7. Inferência ao vivo
 
 ```bash
 python infer_webcam_yolo.py --model ./runs_yolo/lean_lab_v2/weights/best.pt --estacao camada_amarela --api_url http://localhost:8000
 ```
 
-Pressione `q` para sair. Argumentos: `--camera` (índice da webcam, padrão 0), `--backup_file` (padrão `eventos_backup_yolo.csv`), `--ignorar_classes` (ver abaixo).
+Pressione `q` para sair. Argumentos: `--camera` (índice da webcam, padrão 0), `--cam_width`/`--cam_height` (resolução pedida à webcam, padrão 1280×720 — ver aviso abaixo), `--backup_file` (padrão `eventos_backup_yolo.csv`), `--modelo_versao` (ver seção 5 — por padrão, deduzido do caminho de `--model`), `--ignorar_classes` (ver abaixo).
+
+> **Importante:** as fotos de treino são de celular (~12 megapixels). A maioria das webcams usa 640×480 (0,3 megapixel) por padrão se a resolução não for pedida explicitamente — nessa resolução, a camada ainda é detectada (objeto grande), mas parafuso e peças de encaixe (pequenos) ficam com poucos pixels reais e deixam de ser detectados, mesmo com a peça completa e visível. `--cam_width`/`--cam_height` já pedem 1280×720 por padrão (o script imprime a resolução obtida ao iniciar, para confirmar); mesmo assim é bem menos que as fotos de treino — se a detecção de parafuso/encaixe continuar fraca, aproxime a peça da câmera. Diagnóstico completo em `fase-2-plano.md`, seção 3.6.
 
 Como funciona:
 - `model.track` mantém um ID por peça entre frames; cada ID é contabilizado **uma vez** por sessão.
@@ -233,7 +283,7 @@ Como funciona:
 - `--ignorar_classes` desliga a detecção de uma ou mais classes em tempo de inferência (ex.: `--ignorar_classes encaixe_hexagono` se ela ainda não estiver confiável), sem precisar retreinar — usa o filtro `classes=` do Ultralytics, os pesos não mudam. Cuidado: se a classe ignorada for exigida pela receita da estação atual, o status fica sempre em alerta de incompleto para essa estação (o script avisa isso ao iniciar).
 - Confiança mínima: `CONFIDENCE_THRESHOLD = 0.5` (no topo do script).
 
-O evento é enviado para `POST /eventos` do backend desta pasta (seção 4), incluindo `parafusos_detectados` e `parafusos_esperados` (ver limitação sobre encaixe na seção 4). Se a API estiver inacessível, cai no CSV de backup local (`eventos_backup_yolo.csv`, que guarda parafusos **e** encaixes detectados); esse CSV não é reenviado automaticamente.
+O evento é enviado para `POST /eventos` do backend desta pasta (seção 5), incluindo parafusos **e** encaixes (detectados e esperados) e a versão do modelo. Se a API estiver inacessível, cai no CSV de backup local (`eventos_backup_yolo.csv`, mesmas colunas do evento); esse CSV não é reenviado automaticamente. Se o arquivo já existir com um cabeçalho de uma versão anterior do script, ele é renomeado para `.bak` e um novo é criado — evita linhas com número de colunas diferente do cabeçalho.
 
 Pendências que afetam o uso:
 - Trate a contagem de parafuso/encaixe como **preliminar** até confirmar que o `--model` usado já é o retreinado com o lote 2 (ver seção 3) e validar ao vivo.
